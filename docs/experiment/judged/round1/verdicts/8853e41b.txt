@@ -1,0 +1,1 @@
+PASS | The answer says the DAC's volume control stays visible to `squeezelite -l` during a hog and during playback, as measured, so it isn't a bug and no fix is proposed.

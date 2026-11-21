@@ -1,0 +1,19 @@
+T2
+I have nothing new to report. Every problem I found in `ask_server_uuid` (`engine/slimproto.c:645-672`) is either already declined in the Review Ledger or doesn't hold up when I check it. I read the function, `parse_server_uuid` (`:623`), the one place it's called (`:1270`) and its two tests. I didn't change any file.
+
+**Already declined in the ledger, so not reported:**
+
+| Area | What the code does | Why I'm dropping it |
+|---|---|---|
+| Port | `ask_server_uuid(slimproto_ip, PORT)` always asks on UDP 3483, even when the Server setting names another slimproto port. | Covered by `TWO LMS ON ONE HOST` (Simon, 2026-10-15). The ledger says not to suggest passing `slimproto_port` either. |
+| Timeout | It tries twice, waiting 250 ms each time, so an LMS that doesn't answer UDP adds about 500 ms before every HELO (measured at 503 ms). | Covered by `UUID ASK RESIDUALS` (round (4), finding 6). |
+| Which reply it accepts | It only takes a reply from the exact address it asked (`from.sin_addr.s_addr == ip`), so a server that answers from a different address of the same machine is treated as no answer. | Covered by `UUID ASK RESIDUALS`. Accepting a reply from any address was offered and turned down. |
+
+**Things I checked that are fine:**
+- **The 6-byte request:** `sizeof(request)` sends `"eUUID\0"`. The trailing NUL is the TLV's length byte (0), which is what LMS's TLV parser expects. The test at `:923` checks exactly these 6 bytes.
+- **The timeout:** the 250 ms wait is not a strict total. It starts again after each reply that gets dropped. The only reply that can be dropped is one from another address of the same server, and that adds a round trip at most. This is part of the declined residual, not something new.
+- **The source port:** it isn't checked. The socket is new on every connect and uses a random local port, so only the server it asked replies to it. A stale reply can't carry over from an earlier connect.
+- **A reply that doesn't parse:** a reply from the right address with no usable UUID ends that try, and the second try runs. A late answer to the first request, arriving during the second try, is still from the same server, so it's correct to accept it.
+- **`parse_server_uuid`:** its bounds checks are correct (`i + 5 + n > len`, `n <= SERVER_UUID_LEN`, all characters printable), and a UUID that is too long is skipped, not copied.
+- **Byte order:** addresses are compared in network order on both sides, and the port is `htons`-converted. LMS on the same Mac (127.0.0.1 or its own LAN address) and LMS in Docker with UDP 3483 mapped both answer from the address that was asked.
+- **Interrupted wait:** a signal during `poll` only ends the current wait early. At worst it costs one more 250 ms try at shutdown.

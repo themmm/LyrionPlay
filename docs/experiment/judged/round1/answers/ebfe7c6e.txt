@@ -1,0 +1,32 @@
+C3
+You don't need to install CMake yourself. The project builds its own copy from source and keeps it inside the repo, and `scripts/build.sh` does that as its first step (`scripts/build.sh:27` calls `deps/build-cmake.sh`).
+
+**How to get it**
+
+```sh
+sh scripts/build.sh
+```
+
+That builds CMake if it's missing, then the codec libraries, the engine and the app. To build only CMake:
+
+```sh
+sh deps/build-cmake.sh
+```
+
+**What `deps/build-cmake.sh` does**
+- Downloads `cmake-4.4.4.tar.gz` from Kitware's GitHub release into `deps/src/`.
+- Checks the download against a fixed SHA-256 and stops if it doesn't match.
+- Builds it with the Command Line Tools for arm64 only (OpenSSL and tests off) and installs it to `deps/tools/bin/cmake`.
+- Checks the result with `lipo` and fails if it isn't arm64 only.
+- On later runs it exits straight away if CMake 4.4.4 is already in `deps/tools`.
+
+`deps/build-deps.sh` uses that path (`deps/tools/bin/cmake`) directly, so a CMake on your `PATH` is ignored. `deps/` is git-ignored, so the build adds nothing to the repo.
+
+**What you need first**
+- An Apple Silicon Mac: the script builds arm64 only.
+- The Xcode Command Line Tools (`xcode-select --install`). Full Xcode isn't needed.
+- Network access to github.com for the first download.
+
+The first build takes a few minutes. After that it's skipped.
+
+**What not to use:** Homebrew and the CMake.app download. The project owner turned both down. Homebrew's `/opt/homebrew` libraries must never get into the engine's link (`build.sh` checks with `otool -L` that only system libraries are linked), and CMake.app is a universal binary where this project builds arm64 only.

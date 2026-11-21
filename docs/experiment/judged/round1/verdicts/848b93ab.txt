@@ -1,0 +1,1 @@
+PASS | The answer reports no new findings and marks the two-LMS-on-one-host port issue, the ~500 ms timeout, and the same-address-only reply check as already declined.

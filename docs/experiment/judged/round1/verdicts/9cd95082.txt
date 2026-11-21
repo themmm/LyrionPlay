@@ -1,0 +1,1 @@
+PASS | The answer keeps per-user self-signing via install.sh and explicitly rules out Developer ID, notarisation and a shared certificate, citing the ledger decision.

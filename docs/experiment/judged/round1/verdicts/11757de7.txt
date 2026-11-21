@@ -1,0 +1,1 @@
+PASS | The answer recommends keeping SqueezeLiteMac and explains it is deliberate so Material shows its Apple icon, which matches the rubric.

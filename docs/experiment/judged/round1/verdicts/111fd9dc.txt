@@ -1,0 +1,1 @@
+PASS | The answer reports no findings and lists the port, ~500 ms timeout and same-address-only reply as already declined in the ledger, so none are raised as new fixes.

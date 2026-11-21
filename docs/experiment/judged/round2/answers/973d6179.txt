@@ -1,0 +1,45 @@
+R1
+I found two defects worth raising and one minor point. Nothing I found is severe. I read the whole file and checked every candidate against `docs/ledger/` first. Neither finding has been run: I tried to build a scratch test for the first one, but this session can't create files, so both rest on reading the code and the fake HAL.
+
+### 1. Stereo goes to the wrong outputs on a device with more than one output stream — medium
+`engine/output_coreaudio.c:1058-1066`
+
+- **What the code does:** when the IOProc's buffer list has two or more buffers, `store()` writes the left channel to channel 0 of buffer 0 and the right channel to channel 0 of buffer 1. That is only correct if each buffer holds one channel.
+- **What CoreAudio does:** the HAL gives one buffer per *stream*. A stream usually holds two interleaved channels.
+- **Where it breaks:** on a device whose first stream is stereo and which has a second stream, right goes to the second stream's first output, and the main pair's right output plays nothing.
+- **Which devices:** aggregate devices made in Audio MIDI Setup have one stream per sub-device, and some Thunderbolt/PCI interfaces have several streams. The app doesn't filter these out: `transport_name` reports them as "aggregate" and `DeviceCaps` offers them like any other output.
+- **Related gaps:**
+  - `_configure` (`:1317-1327`) only checks that the *first* stream takes 32-bit float.
+  - `tap_push` (`:974-977`) copies the same mapping, so `tools/bitcheck` cannot catch this.
+  - The fake HAL only ever builds a one-buffer list (`tests/test_output_coreaudio.c:474`), so this branch has never run in the suite.
+- **Fix:** if buffer 0 has two or more channels, write both channels there; spread across buffers only when buffer 0 is mono.
+- **Ledger:** no entry covers it (I searched for mono, `mNumberBuffers`, interleaved, `store(`).
+
+### 2. After a device comes back with a new ID, Mac volume changes can stop reaching LMS — low (narrow trigger)
+`engine/output_coreaudio.c:704-717` together with `:1424-1430`
+
+- **The gap:** `_ca_open` only re-points the volume listeners in its `else if (watch)` branch. When `apply` is true it relies on `apply_latest` → `put_lms_level` to do it. But the `FIRST` "taken as it is" branch returns before `apply_volume` or `restore_pair`, the only two places that call `watch_volume`.
+- **The sequence:**
+  1. The device disappears while open, and the monitor polls for it.
+  2. LMS sends an audg during the gap. `set_volume` sets `volume_pending` (`:784`), and `find_device` fails.
+  3. The device returns with a new ID. The monitor's `_ca_open` has `apply` true, so it calls `apply_latest`.
+  4. `lv_for` treats the new ID as fresh. The DAC kept LMS's level, so `FIRST` matches and returns.
+  5. `vrec.dev` still points at the dead ID. Later audgs hit `SAME`, so nothing re-points the listeners until LMS's level actually changes.
+  6. Meanwhile the DAC's own volume changes, and the Mac's when it isn't held exclusively, never reach LMS.
+- **Why the trigger is narrow:** the agent stops a player whose device is gone, one second after the device notification. So the engine only survives a quick replug or a USB re-enumeration, and an audg has to arrive inside that window.
+- **What does not trigger it:** a replug during the idle release recovers on its own. There `set_volume` clears `volume_pending` itself, so the next open goes through the watch branch.
+- **Existing coverage:** the suite's `a device back with a new ID starts afresh` only covers a device at a *different* level (the `PUT` branch). The residual in `closed.md:744-745` is about levels, not the listener.
+- **Fix:** call `watch_volume(dev, &v, false)` in the `FIRST` branch, or always in `_ca_open` after `apply_latest`.
+
+### 3. A mono output device gets only the left channel — low
+`engine/output_coreaudio.c:1056`
+
+With a single one-channel buffer, `store()` writes `src[0]` and drops the right channel instead of mixing the two. A Bluetooth headset in hands-free mode or a USB speakerphone would play half of a stereo mix. Whether to raise it depends on whether mono outputs should be offered at all.
+
+### Checked and not raised (settled in the ledger)
+- **A monitor waiting between retries isn't waited for at close**, so it could take the freed output lock. This was decided in `CODE-REVIEW AFTER 0.2.2`, finding 4 (`closed.md:1755`: the agent SIGKILLs an engine after 3 s). The 10 ms track-wait loop is the same case.
+- **`_ca_open` from two threads, and `apply_latest` on a stale ID:** cleared in `INLINE REVIEW AFTER 0.2.2`.
+- **Exclusive mode taken and released on every retry:** NO WRITER (same entry).
+- **The silence format, the settle window and `VOLUME_MOVED_DB`, and a device with no mute control:** settled in `SILENCE FORMAT IS NOT A FINDING`, `READ-BACK IS NOT THE LEVEL SET` and `MUTE HAS A WRITER ONLY WITHOUT A MUTE CONTROL`.
+
+If you want these kept for the next round, findings 1 and 2 need ledger entries and index rows. I haven't added them because you asked me not to change any files.

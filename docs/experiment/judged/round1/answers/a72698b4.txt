@@ -1,0 +1,17 @@
+T6
+**It's not a bug. The ledger already settles this.** `docs/ledger/index.md:137` marks it **DECLINED by Simon 2026-10-15, NOT A FINDING**. The full entry is §A2 `FOLLOW'S BUILT-IN FALLBACK` (`docs/ledger/decisions.md:934`).
+
+**The code** (`app/Sources/PlayerCore/Settings.swift:227`):
+```swift
+if !output.isBuiltIn, isOn(output.uid) { return devices.first(where: \.isBuiltIn) }
+```
+
+**Why it's correct:** the obvious objection is that the first built-in device in `squeezelite -l` order could be the speakers when headphones are plugged in, so music would play out loud. That was finding 2 of /code-review 2026-10-15 (7), and Simon declined it: "headphones become primary output when they are plugged in." When you plug in headphones, macOS makes them the default output and moves it off the DAC. With the DAC no longer the default, this fallback doesn't run, and Follow plays to the headphones directly. The ledger also says: "Do not re-raise the choice between built-in outputs."
+
+**I also checked one thing the ledger doesn't cover:** whether the built-in device the fallback picks could itself have its own player on. The doc comment promises Follow never plays to such a device. A built-in device can never have its own player:
+- `Players.swift:19` leaves built-in devices out of the player list.
+- `Players.swift:51` only starts device engines for devices that are not built-in.
+
+So the fallback can't clash with a device player, and leaving out the `isOn` check on that line is fine. If there is no built-in device, the fallback returns `nil`, and `PlayerCoreTests.swift:769` tests that case.
+
+I didn't modify any files, and I didn't add a ledger entry because this was already settled.

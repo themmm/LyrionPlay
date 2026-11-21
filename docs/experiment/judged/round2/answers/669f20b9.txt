@@ -1,0 +1,33 @@
+R3
+I found one finding, and it is low severity. This area has been through eight review rounds, and every other candidate I looked at is either settled in the ledger or doesn't hold up against the code. Nothing was built or run; this comes from reading `engine/slimproto.c`, the name test suite and `docs/ledger/`.
+
+## The finding
+
+**1. If the first stamp write fails, the player loses its stamp, and "no stamp" means every server gets the empty answer** (low)
+`engine/slimproto.c:581-582`, `:502`, `:702`, `:748`
+
+- **What the comment says.** The comment on `store_name_servers` (581-582) says a failed stamp write "leaves an older stamp, which at worst offers a server the name instead of the empty answer". That only holds when an older stamp exists.
+- **What happens the first time.** On a player's first naming (a new player's `-n` offer through `name_offered`, or LMS's first `setd`), the name is written by `store_name` and the stamp by `store_name_servers`. If the name write succeeds and the stamp write fails (a full disk between two tiny writes, or `name.server.tmp` can't be created), the disk has a name file and no `name.server`.
+- **After a restart.** `load_player_name` sets `name_from_lms = true` because the file holds a name. `name_server_count` is 0, and `named_by_this_server` treats that as yes (502). So every server gets the empty answer, including one that has never seen the player.
+- **What goes wrong.** If the first connect after that restart is to a different server (the Server setting changed, rediscovery, or a `serv` switch), that server sends its default name (SqueezeLiteMac). The engine stores it and stamps only that server. Back on the first server, which is no longer in the stamp, the engine offers "SqueezeLiteMac" there too. This is the CODE-REVIEW 2026-10-15 (3) outcome (`named SqueezeLiteMac over its name file`), reached through a failed first write.
+- **How it heals.** If the first connect after the restart is to the server that named the player, there is no harm: LMS sends the name back, `store_name` returns true through `file_holds`, and the stamp gets written. So it needs three things: a failed stamp write on the first naming, then a restart, then a different server first. That's why I rate it low.
+- **No test covers it.** `test_failed_write_keeps_name` (`engine/tests/test_slimproto_name.c:600`, `:618`) always starts from an existing stamp (`SERVER_A`). The "no stamp yet" case isn't pinned.
+- **Possible fix.** Fix the comment, or write the stamp even when it's the only line (for example, retry it at the next connect while `name_from_lms` is true and the count is 0). Simon's call; I haven't proposed code.
+
+## Candidates I checked and cleared
+
+| Candidate | Why it's not a finding |
+|---|---|
+| `ask_server_uuid` blocks ~500 ms; a reply from another address is dropped | Declined: `UUID ASK RESIDUALS` |
+| `ask_server_uuid(slimproto_ip, PORT)` ignores the TCP port | Declined: `TWO LMS ON ONE HOST` |
+| A stamp line with no UUID, or a server that doesn't answer UDP, is judged by its address (a new LMS at an old IP gets the empty answer) | Logged residual under `One LMS at two addresses` |
+| An offer that is written but lost before LMS reads it still stamps the server | Accepted: `AN OFFER LOST IN FLIGHT` (re-raise only with the drop seen live) |
+| A name file with no stamp (0.4.8-0.4.9 files, 0.3.x adoption) gets the empty answer everywhere | By design (decisions.md, `LMS OWNS THE PLAYER NAME`). My finding is only about a stamp that fails to write after 0.4.10. |
+| LMS's "Forget player" followed by a reconnect could take the default name | LMS keeps the player's prefs under its MAC (decisions.md, `REMOVE A PLAYER`) |
+| Echoing the untrimmed `setd->data` (744) while storing the 63-byte `fit_name` cut | Correct: the echo matches LMS's pref, so LMS changes nothing. Echoing the cut would rename the player in LMS. |
+| Two LMS renames crossing the echo and looping | LMS sends `setd` only when no answer is awaited; it holds the next one (§A3 `TWO NAMES IN FLIGHT LOOP`) |
+| `inet_ntoa`'s static buffer in `store_name_servers` (591) | Every caller, including `stream.c:237` from `process_strm`, runs on the slimproto thread |
+| `.tmp` or `name.server` files left behind after a remove | `Paths.files(of:)` deletes the whole player folder |
+| `add_name_server`'s memmove and eviction, `parse_server_uuid`'s bounds, `fit_name`'s lead-byte search | Traced and correct |
+
+The ledger rule says cleared candidates should be logged the same session (§A3 or §A2, plus an index row). You asked me not to modify any file, so none of this is logged yet.

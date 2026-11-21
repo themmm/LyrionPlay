@@ -1,0 +1,29 @@
+C3
+You don't need to install CMake yourself. The project builds its own copy, and `scripts/build.sh` does it for you on the first run.
+
+**How it works**
+
+- `scripts/build.sh:27` runs `deps/build-cmake.sh` before anything else.
+- That script downloads the CMake 4.4.4 source from Kitware's GitHub releases and checks it against a pinned SHA-256 (`deps/build-cmake.sh:9`). It then builds CMake for Apple Silicon only and installs it into `deps/tools/bin/cmake`, inside the repo. Nothing is installed system-wide, and `deps/tools` is git-ignored.
+- The codec build (`deps/build-deps.sh:14`) uses that exact path, so any other `cmake` on your PATH is ignored. If `deps/tools/bin/cmake` is missing, it stops with "run deps/build-cmake.sh first".
+- On later runs it sees that 4.4.4 is already built and skips this step.
+
+**What you need**
+
+1. An Apple Silicon Mac. The script fails unless the result is arm64 only.
+2. The Xcode Command Line Tools: `xcode-select --install`. They provide the compiler, `make`, `curl`, `shasum` and `lipo` that the script uses.
+3. Network access to github.com for the download, the first time only.
+
+**Then run either:**
+
+```sh
+scripts/build.sh            # builds CMake, the codecs, the engine and the app
+# or just the CMake step:
+deps/build-cmake.sh
+```
+
+Building CMake from source takes a few minutes the first time.
+
+**If you're offline:** put `cmake-4.4.4.tar.gz` (the source release from the Kitware v4.4.4 GitHub release) at `deps/src/cmake-4.4.4.tar.gz`. The script uses it if it's there, and still checks the hash.
+
+**What not to use:** don't use Homebrew or the universal CMake.app. This is a recorded project decision ("TOOLS ARE BUILT HERE" in `docs/ledger/decisions.md:328`). The reason given is that Homebrew's `/opt/homebrew` libraries must never end up linked into the engine. A Homebrew CMake wouldn't be picked up by the build anyway.

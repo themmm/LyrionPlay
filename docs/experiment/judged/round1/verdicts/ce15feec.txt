@@ -1,0 +1,1 @@
+PASS | It names the ports, 500 ms timeout and reply-address items only as already declined and says it would not report them, and its other points are checked-and-cleared items, not findings to fix.

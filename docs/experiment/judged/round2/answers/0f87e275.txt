@@ -1,0 +1,52 @@
+R1
+I found three issues worth raising in `engine/output_coreaudio.c`, plus one minor note. I checked each against the Review Ledger first, so none of them is something already declined, settled or disproven there. I read the code only: nothing was run on a device, no finding was reproduced, and no file was changed.
+
+### 1. Devices with more than one output stream: the right channel goes to the wrong output — medium
+
+`engine/output_coreaudio.c:1058-1065` (`store`), the same pattern in `tap_push` at `:974-977`, and the frame count at `:1176-1177`.
+
+- **What the code assumes:** if the IOProc's buffer list has more than one buffer, `store` treats it as non-interleaved (one channel per buffer). It writes left to buffer 0 channel 0 and right to buffer 1 channel 0.
+- **Why that is wrong:** CoreAudio gives one buffer per output stream, and each stream can be interleaved. On a device whose streams each carry 2 or more channels, left plays on stream 1's first output and right on stream 2's first output. Stream 1's second output gets nothing.
+- **Where it bites:**
+  - aggregate devices, which have one stream per sub-device; `transport_name` already lists `"aggregate"`;
+  - pro interfaces with an extra S/PDIF or ADAT stream;
+  - the player list now offers every device squeezelite lists (`ONE PLAYER PER DAC`), so other users can pick these.
+- **Why nothing caught it:**
+  - every device on the rig has a single stream;
+  - the fake HAL builds only `mNumberBuffers = 1` (`tests/test_output_coreaudio.c:474`), so this branch never runs in the suite;
+  - the output tap follows the same wrong logic, so it would look consistent.
+- **Fix:** if `mBuffers[0].mNumberChannels >= 2`, write left and right into buffer 0. Use buffer 1 for right only when buffer 0 has one channel.
+
+### 2. With Exclusive off, the physical format is never checked, so DoP can be cut short — low to medium, plausible
+
+`engine/output_coreaudio.c:1307` (`if (ca.hogged) set_physical_format(...)`) and the comment at `:879`.
+
+- **The gap:** in shared mode the engine keeps whatever physical format macOS or Audio MIDI Setup has set.
+- **What happens at 16-bit:** DoP needs at least 24-bit integer. At 16-bit, the marker byte survives but 8 of the 16 DSD bits in each frame are lost. The DAC can still lock as DSD and play corrupted data, which is loud noise.
+- **Who hits it:** a DoP DAC with Exclusive off and DoP on (now offered under *Follow the macOS output*), whose format at that rate is 16-bit.
+- **Not the disproven belief:** `DOP WORKS WITHOUT EXCLUSIVE MODE` was tested on the FiiO, which offers only 32-bit integer, so that test could not show this case.
+- **Fix:** without hog, at least read the physical format when DoP is on. If it has fewer than 24 bits, log a warning or raise it.
+
+### 3. The "same level" rule can leave LMS and the device apart after an LMS-fixed spell — low, narrow
+
+`engine/output_coreaudio.c:683-684` (`SAME`), `:793-796`, `:503`.
+
+- **Why the rule goes stale:**
+  - While LMS's fixed flag is set on a `-V` engine, `set_volume` returns before `put_lms_level`.
+  - `volume_listener` reports nothing in that state, so a Mac volume move then is not seen and `lv.held` is not updated.
+- **What follows:** when LMS turns volume control back on, it sends its saved level at once (`SETTING DVC SENDS AN AUDG AT ONCE`). If that equals `lv.held`, nothing is put on the device. The device stays at the Mac's level while LMS shows another, until the next level change. Before 0.4.2 that level was put back on the device.
+- **When it can happen:** someone sets fixed in Material, and the Mac's volume is moved in the ≤5 s before the agent puts the setting back. A Follow device change does not hit it, because the new engine starts with `lv.fresh` set.
+- **Fix:** clear `lv.held_valid` whenever `set_volume` takes the LMS-fixed early return.
+
+### 4. Minor: mono devices get only the left channel
+
+`engine/output_coreaudio.c:1056`. With one interleaved buffer of 1 channel, `store` writes `src[0]` only, so a mono output loses the right channel instead of getting a mix of both. This is rare and reachable only with a mono USB speaker or similar.
+
+### Checked and dropped (no finding)
+
+- **The monitor waking after `output_close_common`:** `outputbuf` is a static struct, so this locks a destroyed mutex rather than freed memory, and `exit(0)` follows within microseconds. This is already covered in §B / §C.
+- **`CFStringGetCString` failure in `get_string`:** CoreFoundation writes an empty string on failure, so no unterminated text reaches `find_device` or the JSON.
+- **`next_param` with no `-a`:** this is upstream's behaviour, and the agent always passes `-a`.
+- **Every other point in the file** (the silence format, the format report's lag, the 150 ms wait, the residuals of the volume rules, a stalled server, Fixed's hold) is settled in the ledger, so I left it out.
+
+If you want any of these taken further, the ledger's rule is to verify first; fixing is your call.

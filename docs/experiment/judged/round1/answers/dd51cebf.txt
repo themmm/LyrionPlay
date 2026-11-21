@@ -1,0 +1,13 @@
+T8
+**No, it isn't strictly safe, but this is a known gap that Simon accepted, and we shouldn't add a confirmation.** The ledger records it in §A2 as `AN OFFER LOST IN FLIGHT` (ACCEPTED by Simon 2026-10-15, NOT A FINDING). It says not to propose a confirmation for it.
+
+**What the code does** (`engine/slimproto.c:699-731`): when LMS asks for the name and the player offers one (the `-n` name for a new player, or the current name to a server that didn't name it), `name_offered()` runs only if `sendSETDName` wrote every byte. It then sets `name_from_lms`, adds the server to the stamp and writes the name file.
+
+**The gap:** the kernel takes the bytes, then the connection drops before LMS reads them. That needs a drop within about one round trip of the offer: under 1 ms on the LAN, tens of ms over Tailscale. The server is then stamped without having the name. At the next connect the player answers empty and takes whatever name LMS has. On a brand-new LMS that is its default (SqueezeLiteMac, numbered). You would see it, and a rename in LMS fixes it.
+
+**Why not add a confirmation:**
+- **LMS's answer can't serve as one.** LMS ignores an offer equal to the name it already has and sends nothing back (`Prefs::Base::set` returns early when the value hasn't changed). So for that case "wait for LMS's `setd`" never finishes. That case is exactly why round (6) stamps on the offer itself: without the stamp, a server already holding the name was offered it at every connect, never stamped, and a rename it held set off `TWO NAMES IN FLIGHT LOOP`.
+- **The other options were considered and ruled out** when Simon accepted the gap: a timer after the offer, a second empty answer, checking the socket's send queue. Each adds state to the name code, and Simon has said that code is already too complicated to get right.
+- **The trade favours the current rule.** The worse failure is the rename loop (~240 `set name` lines a second, 29 MB of log in 8 minutes on the DragonFly). It needed a drop in an equally short window. The current rule swaps that for a visible, fixable wrong name.
+
+**When to reopen it:** only with the drop seen live. That means an engine log showing an offer, the connection lost within about a second, then LMS's default name at the next connect. Until then it isn't a finding. A review that flags it as "the stamp is set without confirmation" or "the offer is assumed received" is repeating this accepted gap.

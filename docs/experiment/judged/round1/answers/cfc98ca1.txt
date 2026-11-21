@@ -1,0 +1,35 @@
+C3
+You don't need to install CMake yourself. The project builds its own copy, and `scripts/build.sh` does that as its first step (`scripts/build.sh:27`).
+
+**What you need first:** the Xcode Command Line Tools, and an Apple Silicon Mac. The project is arm64 only.
+
+```sh
+xcode-select --install        # skip if `xcode-select -p` already prints a path
+```
+
+**Then either:**
+
+```sh
+scripts/build.sh              # builds CMake if it's missing, then everything else
+```
+
+or build CMake on its own first:
+
+```sh
+deps/build-cmake.sh
+```
+
+`deps/build-cmake.sh`:
+- downloads the CMake 4.4.4 source from Kitware's GitHub release into `deps/src` and checks it against a pinned SHA-256 (line 9). If the checksum doesn't match, it stops.
+- builds it with the Command Line Tools as arm64 only, without OpenSSL.
+- installs it to `deps/tools/bin/cmake` inside the repo, not system-wide. That folder is git-ignored.
+- checks with `lipo` that the binary is arm64 only.
+- does nothing on later runs if 4.4.4 is already built there.
+
+You don't need to add it to your `PATH`. `deps/build-deps.sh` calls `deps/tools/bin/cmake` by its full path and stops with "run deps/build-cmake.sh first" if it isn't there (line 19).
+
+**Don't use** Homebrew or the CMake.app download. This is a recorded project decision (`docs/ledger/decisions.md:328`, "TOOLS ARE BUILT HERE"):
+- **Homebrew:** its `/opt/homebrew` libraries must never end up linked into the engine.
+- **CMake.app:** it is a universal binary, and the project wanted a native Apple Silicon build.
+
+The first build needs internet access to reach GitHub and takes a few minutes, because CMake compiles from source.

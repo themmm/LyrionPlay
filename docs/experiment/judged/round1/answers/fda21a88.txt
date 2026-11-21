@@ -1,0 +1,37 @@
+T3
+**Short answer:** after a DoP track the engine already sends **DoP silence**, not PCM zeros, for the whole pause or stop, up to the idle release. Nothing needs fixing. This project has also already decided that the silence format is **not a finding** (CLAUDE.md, `SILENCE FORMAT IS NOT A FINDING`, Simon, 2026-10-11).
+
+## What the code does
+
+When paused or stopped, upstream `output.c`'s `_output_frames` calls `_write_frames(..., silence=true, ...)`. That function (`engine/output_coreaudio.c:1122-1130`) asks `_silence_fmt()` which buffer to send:
+
+```c
+static dsd_format _silence_fmt(void) {
+	if (_at_pending_rate()) return output.next_fmt;   // a pending track at the device's rate
+	if (ca.rate == ca.track_rate) return ca.track_fmt; // the last track the IOProc started
+	return PCM;
+}
+```
+(`engine/output_coreaudio.c:1098-1102`)
+
+Right after a DoP track:
+- The device is still at the DoP rate, for example 176.4 kHz for DSD64.
+- `ca.track_rate` and `ca.track_fmt` were recorded by the IOProc when that track started (`:1213-1216`).
+- So `_silence_fmt()` returns `DOP`. `_write_frames` sends `silencebuf_dsd` with the DoP markers added (`update_dop`): 0x05/0xFA over 0x6969.
+
+This continues until the device closes:
+- At the idle release (`OUTPUT_OFF`), the IOProc still calls `_output_frames` (`:1195-1204`). The last buffers before the close are therefore DoP silence too. Since 0.2.10 they are no longer 2.9 ms of zeros.
+- The live output-tap tests on the FiiO confirmed DoP silence from the stop all the way to the close (§C, the 0.2.9 and 0.2.10 live tests).
+
+Two cases send PCM zeros instead, both on purpose:
+1. **The device is at a rate no DoP track plays at.** DoP silence at a PCM rate plays as a square wave at Nyquist, about −27 dBFS. That is a real bug, and its fix from round 1 stays.
+2. **A PCM track is pending at the same rate**, for example 176.4 kHz PCM after DSD64. Then the silence takes the pending track's format.
+
+## Should we change it?
+
+No:
+- **The DSD lock is already kept** in the case you're asking about.
+- **The idea that the format matters at all has never been tested on Simon's DACs.** It comes from squeezelite's "DSD silence keeps the DAC locked" comment. Simon tested switching between most formats himself: "no silence its not needed … switch fine". He then decided the silence format (stopped, paused, buffering, around an open, at the idle release) is not to be reported or changed. Four review rounds kept refining this rule on paper, and each change set off the next finding.
+- **The only silence bugs still in scope** are DoP silence at a PCM rate, and anything Simon actually hears on the DAC, reported live.
+
+If you hear a click or a DSD/PCM flip on pause or stop, that is worth raising, with the DAC, the track and the time. Without that, a change here would go against a settled decision.

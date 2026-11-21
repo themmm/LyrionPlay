@@ -1,0 +1,22 @@
+T6
+**It's correct, not a bug.** This exact case was raised in /code-review 2026-10-15 (7), finding 2, and Simon declined it that day. CLAUDE.md §A2 records it under `FOLLOW'S BUILT-IN FALLBACK` as not a finding.
+
+**What the code does** (`app/Sources/PlayerCore/Settings.swift:224-229`):
+
+- If the Follow player currently holds a device exclusively, and that device doesn't have its own player on, Follow stays on it (line 225).
+- Otherwise it takes the macOS default output. If that output is not built-in and its own player is on, Follow takes `devices.first(where: \.isBuiltIn)` instead (line 227). That is the first built-in output in `squeezelite -l` order.
+- With no default output, or with no built-in device in the fallback case, it returns nil.
+
+**Why that's right:**
+
+1. **It's the behaviour Simon asked for.** On 2026-10-10 he said that when Follow tracks a DAC that has its own player, Follow should move to the built-in output (§B, `ONE PLAYER PER DAC`). The doc comment on `followDevice` says the same.
+2. **It can never pick a device that has its own player.** Built-in devices never get a player row: `PlayerList.rows` filters `!$0.isBuiltIn` at `Players.swift:19`, and `EnginePlan` does the same at `:51`. So two engines can't end up on one device. That matches the comment's promise: "Never a device that has its own player on".
+3. **The headphones case is already covered.** The one case where "first built-in" could be the wrong pick is headphones in the jack while the speakers are listed first. Simon declined it because macOS makes headphones the main output when you plug them in. That moves the macOS output off the DAC, so line 227 never runs and Follow just follows the headphones.
+4. **Tests pin it.** `aDeviceWithItsOwnPlayerOnIsNotFollowed` (`PlayerCoreTests.swift:754`) covers falling back to the speakers, the same while Follow holds the DAC, and the DAC again once its player is off. The test after it (`:769`) covers nil when no built-in device is listed.
+
+**Two edge cases I checked, neither a defect:**
+
+- **No built-in output in the list:** Follow gets no device and doesn't start, so the DAC isn't shared. That's what the test at `:769` expects.
+- **Headphones plugged in, then the DAC chosen as the macOS output by hand:** the fallback can still pick the speakers. This is the same corner Simon declined, so it shouldn't be re-raised and no fix should be proposed for it.
+
+I didn't change any files.

@@ -1,0 +1,57 @@
+R2
+I'm writing up the review now. I couldn't run a scratch probe here (the command needed approval), so finding 1 relies on Apple's documented behaviour, not on a measurement.
+
+# Review of `app/Sources/Agent/main.swift` and `app/Sources/PlayerCore`
+
+I checked every candidate against the ledger's index, §A2, §A3 and §C, and dropped anything already declined, accepted or disproven. Five findings are left, most severe first. I modified no files.
+
+### 1. A failed write to agent.log crashes the agent, and it can crash again at every start
+**Where:** `app/Sources/Agent/main.swift:17-20`
+
+- **The defect:** `Log` uses `handle.seekToEndOfFile()` and `handle.write(data)`, Foundation's legacy calls. Apple documents that `write(_:)` raises an Objective-C exception (NSFileHandleOperationException) when "no free space is left on the file system, or if any other writing error occurs". Nothing catches it, so the agent aborts. The `try?` on line 22 covers only the fallback for when the file cannot be opened.
+- **What breaks:** take a full disk with agent.log present. The next log line kills the agent. Its engines are orphaned and keep playing with no agent watching them. launchd restarts the agent, and the new one crashes at line 153 ("agent started"). That is before `stopOrphanedEngines`, so this repeats every launchd relaunch. status.json goes stale, so the menu shows the agent as down.
+- **Why it matters here:** a full disk is the very case the identity retry was built for (CODE-REVIEW 2026-10-15 (8) finding 1). The "cannot create the identity" log line in `makeSlot` is one of the lines that would crash.
+- **The fix:** use the throwing `seekToEnd()` and `write(contentsOf:)` with `try?`.
+- **Not verified:** I did not test this live (it needs a full disk).
+
+### 2. The agent can watch a different LMS from the one the engine is connected to
+**Where:** `main.swift:567-577`, `PlayerCore/LMS.swift:21-49` (`ServerChoice` reuses a server that answers)
+
+- **The defect:** with Server set to "" (automatic), the agent takes the first discovery reply and keeps that server as long as it answers `players`. Each engine runs its own discovery (`engine/slimproto.c:1196`, again at line 1259 after failed connects). Each engine also follows LMS's `serv` command (`process_serv`, slimproto.c:767). The agent's choice is never compared with the server the engine actually reached.
+- **What breaks:** two LMS on the LAN is a real setup on this rig: .119 was running on 2026-10-15. Picking "move this player to another server" in Material has the same effect. In either case:
+  - the menu shows "Connecting to X…" for good while the player plays on Y;
+  - Mac volume pushes go to X, where the player is disconnected, so they are lost;
+  - `syncFixedVolume` never runs, because it acts only on players X lists as connected. LMS Y's fixed flag is therefore never set or put back.
+- **Same cause, configured server:** with a host typed in Settings, `serv` still moves the engine while the agent stays on the configured host.
+- **Ledger check:** this is not `TWO LMS ON ONE HOST`, which is about one host on two ports.
+
+### 3. A probe that finds no devices stops every engine, and nothing tries again
+**Where:** `main.swift:247`, `PlayerCore/DeviceCaps.swift:80-87`
+
+- **The defect:** `DeviceCaps.probe` returns `[]` on any failure: `process.run()` throwing, or `-l` output that does not parse. `reconcile` reads that as "every device is gone". Every planned engine goes into `changes.stop`, and `stopEngines` also cancels their `restartWork`.
+- **What breaks:** the agent has no periodic reconcile. The tick reconciles only after a settings change or a deferred Follow. So the players stay stopped ("Not connected" / "No output device") until the next device notification or settings save.
+- **How it could happen:** the engine binary briefly missing while install.sh swaps the bundle (when the cdhash is unchanged, the agent keeps running through the swap), or a probe run during a coreaudiod restart.
+- **The fix:** treat an empty probe as no information, rather than as every device gone.
+
+### 4. An old "restarting" message hides "Not connected"
+**Where:** `main.swift:469`, `main.swift:682`
+
+- **The defect:** `engineExited` sets `slot.problem = "The player engine stopped; restarting"`, and only a successful `startEngine` clears it (line 408). `writeStatus` shows `slot.problem ?? slot.setupProblem`.
+- **What breaks:** say an engine exits and its DAC is unplugged before the restart. The restart's reconcile finds no plan entry and starts nothing, and the menu says "restarting" for as long as the device stays away, instead of "Not connected".
+- **Severity:** low.
+
+### 5. At startup, the settings are read before their modification time is recorded
+**Where:** `main.swift:168-173`
+
+- **The defect:** `run()` calls `readSettings()` and only afterwards records `settingsDate = modificationDate(...)`. A Save that lands between the two is recorded as already seen. The agent then runs on the older contents until the next Save.
+- **Contrast:** `tick` does it in the safe order, date first (line 506).
+- **Severity:** low. The window is very small.
+
+### Checked and cleared
+These are not findings:
+- **Lock handling in `LatestValueSender`:** the `busy` hand-off is done under the lock.
+- **Restart bookkeeping:** `expectedExit` being overwritten when two stops land close together is harmless (the stale exit matches no slot). A slot passed to `stopEngines` twice is skipped the second time.
+- **`OutputFollow.resolve` when the held device's own player is switched on.**
+- **`Dictionary.filter` in the plan:** it keeps the dictionary type.
+- **Number formatting:** `String(format:)` does not depend on the locale.
+- **MAC matching:** `listing(of:in:)` compares both sides in lowercase.

@@ -1,0 +1,43 @@
+R3
+I found nothing high-severity in the name code. I'd raise three low findings, most severe first. None is in the ledger as declined or accepted, and I changed no files.
+
+### 1. A failed stamp write is worse than the comment says — `engine/slimproto.c:581-582`
+The comment says a failed stamp write "leaves an older stamp, which at worst offers a server the name". Two cases make it worse:
+
+- **The first stamp fails.** A new player's name is written (`store_name` succeeds) but its first `store_name_servers` fails. After a restart the name file has a name and `name_server_count` is 0. `named_by_this_server()` (`:502`) then says yes for every server, so a server that has never seen the player gets the empty answer and renames it to its default (SqueezeLiteMac). That is the bug round (3) fixed, back again.
+- **An older, non-empty stamp is left.** Server A was added in memory (`add_name_server`, `:701` / `:735`) but never reached the disk. After a restart A is not in the stamp, so it is offered the name. If A is holding a rename (up to 300 s after a disconnect), that offer crosses it: `TWO NAMES IN FLIGHT LOOP`. The comment calls this outcome harmless; it is the one the design exists to prevent.
+
+The same gap is at `:702` and `:748`: when `store_name` fails, the stamp is not written at all, so the in-memory list is lost across a restart.
+
+It needs the stamp write to fail while the name write (a smaller file, same folder) succeeds, and an engine restart before the next good write. So the likelihood is very low, but the comment's safety argument is wrong in both directions. At minimum the comment should be fixed; no fix to the order is clearly better.
+
+### 2. A lost UUID reply can file a new LMS under the old server's UUID — `engine/slimproto.c:518-522`
+When a connect gets no UUID, `add_name_server` keeps the UUID already on that address's line. That is right for the same LMS (round (4) finding 2), but wrong for a new LMS at an old address. In order:
+
+1. The stamp is `(A, U)`.
+2. A new LMS V runs at A, and its first UUID reply is lost.
+3. The player is judged by address and gets the empty answer, so V sends its default name. This step is the accepted `UUID ASK RESIDUALS` case.
+4. V's naming is recorded as `(A, U)`.
+5. At a later connect V does answer. `is_connected_server` (`:494`) compares U with V and says "not named", so the player offers its name.
+6. If V is holding a rename for the player, the offer loops.
+
+This needs a new LMS at an old IP, one lost UDP reply, then a held rename. The step-3 residual is accepted; the loop at step 6 is not stated anywhere in the ledger. Raise it as plausible, not confirmed.
+
+### 3. The `-n` name is the only name not passed through `fit_name` — `engine/slimproto.c:1126`, `:1160`
+Names from LMS (`:740`) and from the name file (`:1153`) are cut to 63 bytes of whole characters. The `-n` name is copied with `strncpy(..., 64)`. `name_offered` → `store_name` can then write 64 bytes, possibly ending inside a character. `fgets` reads that back as 63 bytes, and the app's strict UTF-8 read shows no name: the defect round (6) finding 1 fixed for LMS names.
+
+The agent's defaults are always fitted (`Settings.swift:108`, `:114`), so the only writer is a hand-edited settings.json, or a long name typed into the 0.4.0-0.4.5 Name field, offered after the name file is lost. Very low; a nit for consistency.
+
+### Checked and cleared
+- **`add_name_server`'s `memmove`:** correct at both ends, including the length-0 cases and dropping the oldest line once 8 are held.
+- **Stamp parsing:** `load_name_servers` and `parse_server_uuid` are bounded, a malformed line is skipped, and a UUID with control characters is refused.
+- **`fit_name`:** handles 2-, 3- and 4-byte characters at the cut, and invalid UTF-8 without walking past the start.
+- **`replace_file` and `file_holds`:** the temp file is removed on every failure path, and the 1024-byte buffer is larger than the 8-line stamp (at most 640 bytes) and any name.
+- **`inet_ntoa`'s shared static buffer (`:591`):** its only other caller is in `stream.c`, on a path built only with SSL, which this build does not have. So only the slimproto thread uses it.
+- **`sendSETDName`'s result:** false if either part fails, as `name_offered` needs.
+
+### Not raised, by the ledger
+- `ask_server_uuid(slimproto_ip, PORT)` ignores the slimproto port: `TWO LMS ON ONE HOST`.
+- The 500 ms wait and the reply's source-address check: `UUID ASK RESIDUALS`.
+- A server stamped for an offer lost in flight: `AN OFFER LOST IN FLIGHT`.
+- No stamp means the empty answer everywhere: the upgrade path, by design.

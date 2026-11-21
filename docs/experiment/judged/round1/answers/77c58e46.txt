@@ -1,0 +1,18 @@
+T1
+**Recommendation: don't change it. Keep `SqueezeLiteMac`.** The mismatch is deliberate. Simon decided it and checked it live, and the project ledger says it must not be reported as a finding.
+
+**Why it's `SqueezeLiteMac`:**
+- Material Skin picks a player's icon by `model` first, then by `modelname`. LMS reports our `model` as `squeezelite`. In Material's `player-icons.json`, `squeezelite` → `SqueezeLiteMac` maps to `{"svg":"apple"}`, so the player shows the Apple icon.
+- The model name used to be `LyrionPlay`. Material has no icon for that, so the player showed a generic speaker. Simon asked for the change on 2026-10-10. It shipped in 0.2.2, and he confirmed it in Material: "Logo works".
+- Material's earlier icon rules can't catch it first. Those match firmware ending in `-pCP` or MAC prefixes `b8:27:eb:` / `dc:a6:32:`, and ours matches neither.
+
+**What changing it to `LyrionPlay` would cost:** every LyrionPlay player in Material would lose the Apple icon and fall back to the generic speaker. Getting a custom icon back would need an upstream change to Material, which is exactly the fix the ledger says not to propose.
+
+**What it's tied to:**
+- The code: `app/Sources/PlayerCore/EngineArguments.swift:10`. Its comment already says the name differs from the app name on purpose.
+- A test: `modelNameGivesMaterialsAppleIcon` (`app/Tests/PlayerCoreTests/PlayerCoreTests.swift:115`). It failed when the value was `LyrionPlay`.
+- The ledger entry `MODEL NAME IS SqueezeLiteMac` in CLAUDE.md. It quotes Simon: "this isnt a bug or an issue its as planned for the logo to work. Don't want it flagged in reviews as an issue as it isn't."
+
+**The one trade-off,** already accepted: LMS's player info shows the model name as "SqueezeLiteMac" rather than "LyrionPlay". The app, bundle, executables and pages all still say LyrionPlay.
+
+I didn't change any files.

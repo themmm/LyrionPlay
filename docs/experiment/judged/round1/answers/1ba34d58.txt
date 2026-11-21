@@ -1,0 +1,25 @@
+T4
+**I'd report none of them.** The project's ledger has already decided this whole area, so every bug a 3-second answer can cause is out of scope for a review.
+
+## The ruling
+
+`docs/ledger/index.md:69` → `docs/ledger/decisions.md:681`, **A STALLED SERVER IS NOT A FINDING**, decided by Simon on 2026-10-11:
+
+> Do not report any finding whose writer is LMS stalling or answering late: a check that outlasts the agent's 2 s tick or 5 s cadence, a reply landing after a server change, discovery or `LMSClient.call` timeouts (2 s / 4 s), the menu or the volume keys lagging behind a server change.
+
+It names `refreshLMS`, `ServerChoice`, `lmsCheckRunning`, `lastLMSCheck`, `LMSDiscovery.find` and the `LMSClient.call` timeouts. That is every symbol in your question. The one way to reopen it is "a stall seen live, from the agent.log lines … named by time." I tried to search `~/Library/Logs/LyrionPlay/agent.log` for those lines, but the read needed your approval and wasn't run. So I have no live evidence, and the ruling stands.
+
+## What a 3-second answer does in the code
+
+This only describes what the code does; none of it is a finding:
+
+- **The request succeeds.** `URLRequest(timeoutInterval: 4)` (`LMS.swift:225`) only fails after 4 s of silence, so an answer at 3 s comes through. The check is kept, and `LMSCheckLog` writes one `LMS check of … took 3.0 s` line. That line is how the ledger expects a stall to be spotted.
+- **A check gets longer with more players.** `playerStates` sends one `players` request, then one `status` request for each connected player, one after another. At 3 s each, three connected players make a check of about 12 s. During that time `lmsCheckRunning` makes each tick skip its check, so the menu's state lags behind. The ledger has already ruled that this doesn't delay volume pushes (`disproven.md:56`, A STATUS CHECK HOLDS UP A PUSH).
+- **Server discovery misses a late reply.** `LMSDiscovery.find` waits 2 s for the server's network reply. If the server is configured by host, the agent falls back to that host on port 9000 with no name. With an empty setting (find a server on the network), no server is found, and Mac volume changes aren't sent to LMS until a check finds one.
+- **A server change while a check runs** is already handled. `ServerChoice.checked` drops the old result, and `lastLMSCheck = .distantPast` makes the next tick check the new server. This was fixed in earlier rounds and is covered by the `ServerChoosing` tests.
+
+Two edge cases I found while reading also exist only when LMS is slow, so the ruling covers them too:
+- A settings change during a running check doesn't trigger its "check now": the tick sets `lastLMSCheck = Date()` before the `refreshLMS()` call that is skipped (`main.swift:526–528`).
+- A `syncFixedVolume` send can still be running when the next check reads the old value. The same setting would then be sent a second time.
+
+If agent.log ever shows a `took N s` or `dropped after` line at a known time, that meets the condition for reopening. These are the first things I'd check then.

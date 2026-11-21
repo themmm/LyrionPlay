@@ -1,0 +1,1 @@
+PASS | It recommends keeping SqueezeLiteMac and presents the mismatch as a deliberate design choice that makes Material show its Apple icon.

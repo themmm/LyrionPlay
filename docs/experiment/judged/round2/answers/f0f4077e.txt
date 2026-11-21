@@ -1,0 +1,46 @@
+R2
+I found three things I'd raise. None is a crash or audio-path defect; the first is the only one with real user impact. I checked each against the ledger's index, §A2 and §A3 so I don't repeat a declined or settled item. I read the code only: I ran no tests and changed no files.
+
+### 1. The agent's LMS server can differ from the server the engines are connected to, and it never corrects itself (medium)
+
+- **Where:** `app/Sources/Agent/main.swift:567-577`, `app/Sources/PlayerCore/LMS.swift:44-49`, `app/Sources/PlayerCore/LMS.swift:180-201`, `app/Sources/PlayerCore/EngineArguments.swift:36-38`
+- **What happens:** the agent decides which server it talks to on its own; it never asks the engines.
+  - With the Server setting on automatic, each engine gets no `-s` and runs its own discovery. Separately, `LMSDiscovery.find` broadcasts and takes the first reply.
+  - With two LMS on the network (Simon's second server at .119 is one), the engine and the agent can each pick a different one.
+  - Even when both start on the same server, LMS can move a player to another one (the `serv` switch, which the ledger already counts as a real path).
+  - `refreshLMS` only looks for a server again when `known` is nil. `ServerChoice.checked` keeps a server for as long as it answers `players`, even when this player isn't listed there.
+- **Why it matters:** while the music plays on server B and the agent sticks with A:
+  - the menu shows "Connecting to A…" for good (`main.swift:678-679`);
+  - Mac volume pushes go to A for a player A doesn't have, so they are dropped (`main.swift:443-451`);
+  - `syncFixedVolume` runs only for players A reports connected (`main.swift:598-599`). On B, LyrionPlay never sets or restores the fixed setting, so Material shows a working slider on a Fixed player.
+- **Not covered by the ledger:** this is not `TWO LMS ON ONE HOST` (that is one host on two ports, and about the engine's name stamp) or `One LMS at two addresses`. A stalled server is not involved either: B answers normally.
+- **Possible fix:** when a player that is on stays unlisted or disconnected on `lms.server` for some checks, look for the server again. Better still, have the engine report the server it is connected to on stdout, as it already does for format and volume.
+
+### 2. A failed device probe is read as "no devices", which stops every engine (low)
+
+- **Where:** `app/Sources/PlayerCore/DeviceCaps.swift:79-87`, `app/Sources/Agent/main.swift:247`
+- **What happens:**
+  - `DeviceCaps.probe` returns `[]` when `squeezelite -l` cannot be launched, and it ignores the exit status, so a probe that crashes halfway gives a partial list.
+  - `reconcile` takes the result as the truth: every engine whose device is missing from the list is stopped with "its device is not present".
+  - Nothing probes again until the next device change, settings change, restart or identity retry.
+- **When it can happen:** the window is narrow: a reconcile that lands during install.sh's swap of the bundle (`rm -rf`/`mv`), or a `-l` that fails once. When it does hit, all players stay down until something else triggers a reconcile.
+- **Possible fix:** treat a launch failure or a non-zero exit as "keep the devices we had".
+
+### 3. A crash message stays on screen instead of "Not connected" (low, menu only)
+
+- **Where:** `app/Sources/Agent/main.swift:469`, `app/Sources/Agent/main.swift:682`; the message is cleared only at `main.swift:408`
+- **What happens:**
+  - `engineExited` sets `slot.problem = "The player engine stopped; restarting"`, and only a successful `startEngine` clears it.
+  - If the device is gone when the restart runs, no engine starts. `writeStatus` shows `slot.problem ?? slot.setupProblem`, so the menu says "restarting" for as long as the device is unplugged, although nothing is restarting.
+  - The same happens with "could not start" from a failed `process.run()`.
+- **When it can happen:** the ledger itself gives the trigger (`AN ABSENT DEVICE AT START EXITS THE ENGINE`): unplug a DAC while its engine is starting or restarting.
+- **Possible fix:** clear `slot.problem` when the plan has no device for the slot.
+
+### Checked and cleared
+- **Engine exits:** `expectedExit` handles a stop followed by a restart in one reconcile, a stop of an engine that had just died, and slots removed while their exit was still pending. Every case ends correctly.
+- **Two passes in one stop:** the slot handed to `stopEngines` twice in `reconcile`, and the mutation of `slots` while iterating `slots.keys`, are both safe.
+- **`LatestValueSender`:** the lock and the busy/pending handover are correct, and the interval is respected.
+- **Stdout reader:** it drains the pipe on its own queue, so a busy main queue never blocks the engine's `printf`. Lines from a replaced engine are dropped by the `slot.engine === process` check.
+- **Volume and Fixed logic:** `VolumePush`, `FixedVolumeSync` (keyed by device), `HeldVolume`, and `LMSVolume.gain`/`dB(gain:)` are consistent with each other and with the engine.
+- **Settings and follow:** `Settings.read`, `save` and `setAsideOlder`, `OutputFollow.resolve`, and `followDevice`'s rule of never taking a device whose own player is on are all correct. `EnginePlan.changes` stops every changed engine before it starts any.
+- **Odd volume lines:** a `-inf`/`nan` dB in a volume line parses and maps to LMS volume 1. That is harmless.

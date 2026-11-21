@@ -1,0 +1,15 @@
+C2
+The first step is to ask you which output device to use, and I haven't run anything yet. A DSD64 play makes sound, and this repo's rule is to ask Simon which output device to use before any test that makes sound. The rig has more than one DAC (the FiiO M11 Plus and the DragonFly), so I won't pick one myself.
+
+**Which DAC should I use, and which LyrionPlay player should play it: *Follow the macOS output* or that device's own player?**
+
+Once you answer, this is the plan (from `docs/live-test.md`):
+
+1. **Check DoP is switched on for that device.** DoP is off by default for each device, because CoreAudio can't tell whether a DAC accepts it (ledger: `DOP IS A SWITCH`). With it off, the engine converts DSD to PCM, so the test would fail for that reason alone. Exclusive mode doesn't need to be on: DoP also works in shared mode on *Follow the macOS output* (`DOP WORKS WITHOUT EXCLUSIVE MODE`).
+2. **Check the player's mode in LMS (`plex:9000`) and note its queue** so I can put it back afterwards. I'll check the mode again before every LMS command, not just at the start.
+3. **Quick check:** load the rig's DSD64 track (827020). Pass if:
+   - the engine log says `opened <DAC> at 176400 Hz` (DSD64 as DoP runs at 176.4 kHz);
+   - the menu shows DSD64 (2.8224 MHz);
+   - the DAC's display says DSD, not PCM. You'd need to be at the DAC for this, and I'd tell you before the play starts.
+4. **Optional, if you want to see the actual frames:** an output-tap run. I'd read every player's `engine.pid`, stop the agent, run the installed engine by hand with `LYRIONPLAY_TAP` and capture its PID. Then I'd check the tap file for DoP markers (top byte 0x05/0xFA) and restore the agent afterwards. I'd only kill the PID I captured.
+5. **Afterwards:** stop playback, put the queue back as it was, and confirm the player is connected in LMS again.

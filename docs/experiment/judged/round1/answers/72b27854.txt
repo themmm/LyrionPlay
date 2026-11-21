@@ -1,0 +1,22 @@
+T3
+**What goes to the DAC:** DoP silence, as long as the device is still at the DoP track's rate. So the DAC already gets what keeps it in DSD mode.
+
+How the code does it:
+
+- **Picking the format** (`engine/output_coreaudio.c:1098`, `_silence_fmt`) follows three rules in order:
+  1. If a pending track is buffered and the device is already at its rate, the silence takes that track's format (`output.next_fmt`).
+  2. Otherwise, if the device is still at the rate of the last track it started (`ca.rate == ca.track_rate`), the silence takes that track's format (`ca.track_fmt`). After a DSD track played as DoP, this gives DoP.
+  3. Otherwise it plays PCM zeros. DoP silence at a rate no DoP track uses would play as PCM noise: a square wave at Nyquist, about −27 dBFS.
+- **Writing it** (`_write_frames`, `:1122-1131`): when the format is not PCM, it fills `silencebuf_dsd` and stamps the DoP markers with `update_dop` before handing it to the DAC. That is upstream squeezelite's "DoP silence keeps the DAC locked in DSD mode."
+- **This covers** a pause, a stop, an underrun, buffering, and the rate delay.
+- **After the output goes OFF** (`:1195-1204`), the IOProc keeps calling `_output_frames`, so the same DoP silence plays until the device is closed at the idle release. That has been the case since 0.2.10.
+- **The one time a DSD player gets PCM zeros** is when the device has moved to another rate. DoP silence there would be noise, not a lock signal, so that case is correct.
+
+**Is it a bug to fix? No.** The ledger already settles this: **`SILENCE FORMAT IS NOT A FINDING`** (`docs/ledger/decisions.md:658`, Simon, 2026-10-11). Reviews are told not to report which format the silence takes when paused, stopped, buffering, around an open, at a rate change or at the idle release. They are also told not to report claims that the DAC "loses its DSD lock" at those points. The reasons recorded there:
+
+- The idea that DSD silence keeps the DAC locked came from upstream and was never tested on Simon's DAC.
+- Up to 0.2.9, every idle release after DSD ended in about 2.9 ms of PCM zeros, and Simon heard nothing wrong.
+- Simon tested on the FiiO himself: DSD128 paused, then DSD256, then back to DSD128, and every switch played correctly.
+- Rounds 2–4 kept adjusting this rule on paper, and each change led to the next finding. The engine is held at 0.2.10's behaviour. `MATRIX_SIG` compares any change against it across about 25,700 scenarios.
+
+Only two things still count as bugs here: DoP silence at a rate no DoP track plays at (rule 3 above prevents that), and anything Simon actually hears on the DAC, reported from a live test. Neither applies to your question, so there is nothing to change. I haven't modified any file.

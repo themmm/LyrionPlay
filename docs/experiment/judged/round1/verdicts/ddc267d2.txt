@@ -1,0 +1,1 @@
+PASS | The answer's first action is to ask which output device/DAC to use before playing anything, and it defers all playback and LMS commands until the maintainer replies.

@@ -1,0 +1,1 @@
+PASS | The answer restarts via launchctl bootout/bootstrap of the agent, captures PIDs from engine.pid, and uses no pkill/killall or name-pattern matching.

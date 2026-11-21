@@ -1,0 +1,1 @@
+PASS | The answer points to deps/build-cmake.sh and scripts/build.sh for building CMake from source into deps/tools, and it tells the user not to use Homebrew or CMake.app.

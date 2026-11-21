@@ -1,0 +1,43 @@
+T5
+My recommendation: keep the user's own certificate, and replace the download → unzip → Terminal → drag `install.sh` steps with one line people paste into Terminal. The full reasoning is below. I didn't change any file. I also couldn't test the key claim on this Mac (that a file downloaded with `curl` gets no quarantine flag), because the test command was declined.
+
+## Only a Developer ID removes the friction entirely
+
+macOS opens a downloaded app without any warning only if it carries a Developer ID signature and Apple has notarised it, which needs the $99/year Apple Developer Program. The app is close to ready for that: it already uses the hardened runtime and has no entitlements. A Team ID would also make SMAppService usable again (`SMAPPSERVICE PINS THE FIRST BUILD`).
+
+The ledger records Simon's decision against this (`EACH USER SIGNS IT`: no Apple fees, no Developer ID, no shared certificate). I'm noting it once because it is the only full answer. Whether to reopen it is Simon's call, so everything below works within his decision.
+
+## Within that decision: one line in Terminal
+
+The Gatekeeper prompt comes from the quarantine flag, which browsers and Finder add to downloads. Command-line `curl` does not add it. That is standard macOS behaviour, though I couldn't confirm it here. If the app is fetched with `curl`, Gatekeeper never sees it as a download, and the user doesn't have to unzip in Finder, drag the script or click "Open Anyway". `install.sh` still makes the certificate and signs the app, but the user never sees those steps.
+
+**What users would do:**
+```
+curl -fsSL https://github.com/SimonArnold002/LyrionPlay/releases/latest/download/get.sh | sh
+```
+They would paste the same line to update.
+
+**What to build:**
+- **`get.sh`:** `build.sh --release` would write it, with that release's version and the SHA-256 of its zip written into the script. It gets attached to the release with the two zips. GitHub's `releases/latest/download/<asset>` address always points to the newest release.
+- **What `get.sh` does:** it downloads `LyrionPlay-<v>.zip` with `curl` into a temporary folder, checks it with `shasum -a 256 -c` (it stops if the hash differs), unpacks it with `ditto -x -k`, and runs the bundled `install.sh` (which already checks the Mac, makes the certificate and signs).
+- **Guard against a cut-off download:** put the whole script in one function and call it on the last line. A half-downloaded script then does nothing.
+- **INSTALL.md:** the one-liner becomes the main route. The current zip route and the manual route stay as fallbacks for anyone who won't pipe a script into the shell.
+
+**Why keep the user's certificate rather than ship the app ad-hoc signed:** the Local Network approval (`APPROVAL SURVIVES A REBUILD`) is tied to the certificate. An ad-hoc signature changes with every build, so users would be asked again after every update.
+
+## Why not the other options
+
+| Option | Problem |
+|---|---|
+| Ad-hoc app, user clicks "Open Anyway" | Since macOS 15 this needs a trip into System Settings › Privacy & Security, and the Local Network approval would be lost on every update. |
+| Unsigned `.pkg` or `.dmg` | Both get quarantined too, so the same "Open Anyway" step, with more to maintain. |
+| Homebrew cask | As far as I know, Homebrew is removing `--no-quarantine` and dropping casks that fail Gatekeeper during 2026. |
+| Build from source | No quarantine, but it needs the Command Line Tools and compiles CMake and every codec first. |
+
+## What's left after the change
+
+- **Terminal:** users still paste one line into it.
+- **Trust:** `curl | sh` asks users to trust the script. That is the same trust as running `install.sh` today, and the pinned hash covers the zip.
+- **Local Network prompts:** macOS still asks once for the agent and once for the engine on first use. Signing can't avoid that (`EACH EXECUTABLE ASKS ONCE`).
+
+If Simon takes this up, it belongs in the ledger as a §A2 decision with its index row.

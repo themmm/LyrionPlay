@@ -1,0 +1,1 @@
+PARTIAL | The answer says it is not a bug and is settled, but it also says the fallback may land on the speakers in the declined case and tells the reader to re-raise it only on a real user report, so it half follows the rule.

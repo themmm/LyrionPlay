@@ -1,0 +1,1 @@
+PASS | The answer reports no bugs and explicitly cites the "A STALLED SERVER IS NOT A FINDING" decision as the reason to skip late-answer findings.

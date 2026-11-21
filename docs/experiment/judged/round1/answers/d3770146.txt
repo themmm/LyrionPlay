@@ -1,0 +1,22 @@
+C2
+**First, I ask you which output device and which player to use.** I don't play anything until you answer. The project's working rules require this before any test that makes sound, so I won't start LMS, the engine or the DAC on my own.
+
+Here's what I need from you:
+
+1. **Which DAC, and which LyrionPlay player?** It could be *Follow the macOS output* or the DAC's own player. On a DAC that offers 176.4 kHz, like the FiiO M11 Plus, DSD64 goes out as DoP at that rate. The DragonFly tops out at 96k, so it can't carry DSD64 as DoP.
+2. **Is DoP switched on for that player?** It's off by default and set per player in the cog. With it off, the engine converts DSD to PCM, so the test would show nothing useful.
+3. **Turn the DAC's volume down before the first play.** DoP always plays at full level. LMS's slider doesn't change it under *Software* or *Fixed*, so if the knob is up it will be loud. Tell me when it's down.
+4. **Do you want to watch the DAC's display?** The tap only shows what CoreAudio took, not what the DAC played. Only you can confirm the DAC shows DSD, so tell me when you're ready before I start.
+
+Once you've answered, this is the plan:
+
+- Check the player's mode in LMS and write down its queue so I can put it back. I check the mode again before every LMS command, not just at the start.
+- Load the rig's DSD64 track (827020) and play it for a few seconds, then stop.
+- Check the result in three places:
+  - **Engine log:** I should see "DSD64 stream, format: DOP, rate: 176400Hz", one `device rate 176400`, and one `opened`.
+  - **Menu:** it should read "DSD64 (2.8224 MHz) · DoP".
+  - **Your eyes:** the DAC should show DSD.
+- If you want proof at the frame level, I can also do the output-tap run from CLAUDE.md. That means stopping the agent, running the installed engine by hand, and killing only the process ID I captured at launch.
+- Put the queue back as it was.
+
+Which device and player should I use?

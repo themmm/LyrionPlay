@@ -1,0 +1,44 @@
+R1
+I didn't find anything serious in `engine/output_coreaudio.c`. The IOProc, the open and reopen path, the close-versus-monitor wait, the lock order and the volume rules all hold as written. Below are the five findings I would raise, all minor, then what I checked and left out. I read the file and its callers in `slimproto.c` and `output.c` only; nothing was built, run or changed.
+
+### Findings, most severe first
+
+**1. `set_rate` compares a cut-off rate exactly — `engine/output_coreaudio.c:859` and `:869`**
+`(unsigned)cur == rate` drops the fraction. If a device reports its nominal rate as, say, 44099.9999:
+- the check never matches, so the code sets the rate again (the device takes it, since it is already there);
+- it then polls for 3 s, still never matching, and logs "did not switch to 44100 Hz … (now 44100)", because `%.0f` rounds;
+- the open fails and the monitor retries for ever, waiting 3 s each time.
+
+The same file already allows ±0.5 Hz in `device_rates` (`:215`) and `set_physical_format` (`:897`), so it expects rates that aren't whole numbers. Comparing within 0.5 Hz (`fabs(cur - rate) < 0.5`) would make the three agree. No device on the rig reports such a rate, so this is robustness for other users' DACs.
+
+**2. The monitor searches for the device while holding the output lock — `:1492`**
+`find_device` lists every HAL device and reads two or three properties from each. In the monitor it runs under `LOCK`, every 2–5 s, for as long as a device is missing or won't open. During a play from idle while another app holds the DAC, that blocks the decoder and slimproto for the length of those calls. `set_volume` already calls `find_device` without the lock (`:797`). The search could run before taking the lock, with only the state checks inside it.
+
+**3. Losing a held device logs a false warning — `:1381` → `unhog` → `hog()` at `:831-834`**
+When the device we hold exclusively disappears, `_ca_open` calls `unhog()` on its old, now dead ID. `hog(…, false, false)` finds no hog-mode property on a dead ID and logs `LOG_WARN("device has no exclusive (hog) mode")`, which isn't true. `unhog` passes `quiet = false`. This only affects the log, since the agent stops the engine when the device goes.
+
+**4. Channel 2 uses channel 1's dB range and settability — `:284-291`, used at `:357` and `:582`**
+On a device with two channel controls, `v->db`, `db_min` and `db_max` are read from `elem[0]` only. If the two channels' ranges differ:
+- `set_control_db` clamps channel 2 to channel 1's range;
+- the stuck-dB rule (`d >= v->db_max`) judges channel 2 against channel 1's maximum.
+
+The one two-channel device measured (the Melomania) has the same range on both channels, so nothing goes wrong today.
+
+**5. The tap's writer thread is started without checking it started — `:1029` and `:1035`**
+If `pthread_create` fails, `tap.on` is still set, and `output_close_coreaudio` → `tap_close` calls `pthread_join` on a thread that doesn't exist, which is undefined behaviour. This only matters when the debug variable `LYRIONPLAY_TAP` is set.
+
+### Checked and not raised
+- **Settled in the review ledger:**
+  - the silence format and `_silence_fmt`;
+  - the format report lagging behind the DAC, and its first-change behaviour;
+  - the boundary and reopen-flag handling;
+  - the monitor not being waited for between retries at exit;
+  - the `ca_report_format` second lock.
+- **Already accepted or cleared:**
+  - an LMS echo matching any of the last 5 s of reports after a failed send;
+  - a Mac move inside the 500 ms settle window going unreported;
+  - LMS's fade-out after a Mac mute unmuting the device.
+- **Cleared on reading:**
+  - lock order (`apply_lock` → output lock → `vrec.watch` → `vrec.lock`, with `lv.lock` only ever held alone);
+  - an empty `-a …:1:` field, which `next_param` turns into no held level rather than a 0 dB hold;
+  - the close path when `_ca_open`'s start races `running = false`.

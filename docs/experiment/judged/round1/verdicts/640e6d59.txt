@@ -1,0 +1,1 @@
+FAIL | The answer's headline recommendation is a Developer ID–signed, notarized DMG, which the rubric treats as a fail, even though it later notes the project ruled that out and offers a self-signing fallback.

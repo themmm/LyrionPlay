@@ -1,0 +1,45 @@
+T5
+I'd keep the per-user self-signing and stop making people handle a zip and drag files into Terminal. A one-line install command does that now, and an in-app updater later can remove the update step too.
+
+## What's already decided
+
+macOS only opens a downloaded app with no warning if it has a Developer ID signature and Apple's notarisation. The ledger rules that out: **`EACH USER SIGNS IT`** (`docs/ledger/decisions.md:14`, Simon, 2026-10-09) means no Developer ID and no notarisation unless Simon says otherwise, and no shared release certificate. So I'm not proposing either. The aim is to make the self-signing invisible, not to remove it.
+
+## What makes it awkward now
+
+The signing itself works: `scripts/install.sh` uses only tools every Mac has (`/usr/bin/openssl`, `security`, `codesign`, `ditto`, `xattr`), needs no sudo, and takes the app path as `$1`. The friction is all in getting there (`INSTALL.md:45-57`): unzip in Finder, open Terminal, type `sh `, drag the script in, press Return.
+
+## Recommendation
+
+**1. First install: one line to paste into Terminal.** Attach a small `get.sh` to each release and put this on the README and release page, with the version filled in from `VERSION`:
+
+```
+curl -fsSL https://github.com/SimonArnold002/LyrionPlay/releases/download/v0.4.14/get.sh | sh
+```
+
+`get.sh` would:
+- download `LyrionPlay-<v>.zip` with `curl` into a new temporary folder;
+- check its SHA-256 against a value written into `get.sh` at release time;
+- unzip it with `ditto -x -k`;
+- run `sh <dir>/install.sh <dir>/LyrionPlay.app`, then delete the temporary folder.
+
+Why this helps:
+- **Gatekeeper never checks the app.** Gatekeeper only checks files carrying the quarantine flag, and `curl` doesn't set that flag.
+- **`install.sh` doesn't change.** It already handles the certificate, signing, the swap, and restarting the player only when needed.
+- **Users take on no extra trust.** They already run your `install.sh`; this just fetches it for them.
+- **The current route stays.** The zip and `INSTALL.md` remain for anyone who wants to read the script before running it.
+- **`build.sh --release`** would write `get.sh` with the zip's hash, as it already checks the codec archives against theirs.
+
+The checksum catches a broken or partial download, but not a compromised GitHub release, because the hash comes from the same place as the zip. The page shouldn't claim more than that.
+
+**2. Later: updates from inside the app.** Add an "Install update…" item to the menu. The app would download the new zip, check it, and run the new `install.sh` as a separate process so it can replace the running app and reopen it. As far as I know, downloads by an app that isn't sandboxed and doesn't set `LSFileQuarantineEnabled` aren't quarantined. The user's certificate is already in their keychain, so updates need no Terminal and no new permissions. This needs design work: replacing the app while it runs, and a live test.
+
+## What I'd avoid
+
+- **An unsigned `.pkg` or `.dmg`:** Gatekeeper still blocks it. Since macOS 15, Control-click → Open no longer gets past the block, so users must go to System Settings → Open Anyway, which is more steps, not fewer.
+- **A Homebrew cask:** as I recall, Homebrew has been phasing out casks that fail Gatekeeper checks, with removal due by about September 2026, so it would mean self-signing again. Check this before relying on it either way.
+- **Recommending the unsigned "Open Anyway" route:** each update looks like a new app to macOS, so users approve it and the two Local Network prompts again every time (`INSTALL.md:242-250`).
+
+Two prompts stay whatever you do: the two Local Network prompts on first run, and possibly a keychain prompt when the certificate is first created.
+
+If Simon adopts this, it belongs in the ledger as a §A2 entry with an index row, so a later review doesn't suggest a `.pkg` or a cask again. I haven't changed any files.

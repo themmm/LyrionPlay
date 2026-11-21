@@ -1,0 +1,1 @@
+PASS | The answer says the silence format is not a bug, cites the settled ledger decision that the maintainer tested switching and declined further changes, and does not propose changing the silence format.

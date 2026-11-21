@@ -1,0 +1,36 @@
+C3
+You don't need to install CMake on your system. The project builds its own copy from source, and the build already does this for you.
+
+**What to run**
+
+```sh
+sh scripts/build.sh
+```
+
+The first thing `scripts/build.sh` does is run `deps/build-cmake.sh` (line 27). That script:
+
+- downloads the CMake 4.4.4 source from Kitware's GitHub release;
+- checks it against a pinned SHA-256 and stops if it doesn't match;
+- builds it for arm64 only with the Command Line Tools;
+- installs it into `deps/tools/bin/cmake`, inside the repo. This folder is git-ignored, and nothing goes system-wide.
+
+If you run it again once it's built, it prints "already built" and does nothing. To build only CMake:
+
+```sh
+sh deps/build-cmake.sh
+```
+
+You probably saw "run deps/build-cmake.sh first" because you ran `deps/build-deps.sh` on its own. That script only looks for `deps/tools/bin/cmake` and stops if it isn't there (`deps/build-deps.sh:19`).
+
+**What you need first**
+
+- An Apple Silicon Mac on macOS 14 or later. The script rejects anything that isn't arm64.
+- The Command Line Tools (`xcode-select --install`). You don't need Xcode itself.
+- Network access to github.com. The first build takes several minutes.
+
+**What not to use**
+
+- **Homebrew:** the project doesn't use it, so that its libraries in `/opt/homebrew` can never end up linked into the engine.
+- **The universal CMake.app:** it was replaced by the native build.
+
+Both are settled decisions in `CLAUDE.md` (see "TOOLS ARE BUILT HERE"). Even if you already had a `cmake` on your `PATH`, the build wouldn't use it. It only uses the copy in `deps/tools`.

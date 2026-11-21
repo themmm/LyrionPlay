@@ -1,0 +1,1 @@
+PASS | The answer keeps install.sh self-signing and explicitly rules out Developer ID, notarisation and a shared certificate, citing the ledger decision, so it recommends none of them.

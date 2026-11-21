@@ -1,0 +1,35 @@
+R3
+I found no high or medium findings. There is one low-severity hardening finding. Everything else I looked at is either correct or already settled in the ledger.
+
+## Findings
+
+**1. Low (hardening): `process_setd` assumes the incoming name ends with a NUL byte inside the packet** — `engine/slimproto.c:737`, `:742`, `:744`
+
+- **The cause:** `slimproto_run` passes `process()` its static 4 KB receive buffer (`:828`, `:859`). Nothing ends the packet with a NUL, and leftover bytes from earlier, longer packets stay in the buffer. `strncpy` at `:737` stops after 64 bytes, but `LOG_INFO("set name: %s", setd->data)` (`:742`) and the confirmation `sendSETDName(setd->data)` (`:744`, which calls `strlen`) read until they find a NUL.
+- **What goes wrong:** if a `setd` name ever arrives without its NUL, the player name picks up stale bytes, up to 63 of them.
+  - That name is cut to whole characters, written to the `-N` file with `F_FULLFSYNC`, and the server is added to the server list.
+  - The confirmation sends the longer, corrupted text back to LMS. LMS sees a value different from its own and takes it as a rename. Both sides then keep the corrupted name.
+  - If the packet fills all 4096 bytes, `strlen` can run past the end of the array.
+- **Why it's low:** upstream squeezelite has the same code. As far as I know, LMS 9.1 always ends the name with a NUL. I did not check this against the LMS source in this session. Before LyrionPlay, a bad name stayed in memory; now it is written to disk and sent back to LMS.
+- **Fix:** take the name from at most `len - 5` bytes (`memchr` for the NUL, or copy into a terminated local buffer). Then use that copy for the log, the confirmation and `player_name`.
+
+## Checked and not raised
+- **UUID lookup using UDP port 3483 whatever the slimproto port** (`:1270`): declined, `TWO LMS ON ONE HOST`.
+- **The ~500 ms wait before the HELO, and replies accepted only from the address asked** (`ask_server_uuid`, `:645–672`): declined, `UUID ASK RESIDUALS`.
+- **A server with no UUID reply judged by its address**, including the rename loop when a held rename meets a second address. The suite pins this on purpose (`test_held_rename_two_addresses_no_uuid`). It is the settled residual under `One LMS at two addresses`.
+- **The server list updated when an offer is fully sent, even if LMS never reads it** (`name_offered`, `:699`): accepted, `AN OFFER LOST IN FLIGHT`.
+- **No server list at all means the empty answer goes to every server** (`:502`): by design, `LMS OWNS THE PLAYER NAME`.
+- **The `.tmp` + `F_FULLFSYNC` + rename writes**: `A STOP CANNOT CUT THE NAME WRITE` and CODE-REVIEW 2026-10-15 (5)/(6).
+- **Code I traced and found correct:**
+  - `add_name_server`: the line matching, the `memmove` edge cases (last line, list full) and dropping the oldest line.
+  - `fit_name` at 2-, 3- and 4-byte characters at the cut.
+  - The buffer sizes in `file_holds`, `load_name_servers` and `store_name_servers`.
+  - The 6-byte `"eUUID"` request: its trailing NUL is the tag's length byte.
+  - The bounds checks in `parse_server_uuid`.
+  - The confirmation sending LMS's full name, not the cut one, so a name over 63 bytes doesn't trigger a rename.
+
+Two related cases I looked at and left out because I couldn't show they happen or do harm:
+- **An empty name from LMS** (`setd` carrying only a NUL) would write an empty `-N` file, and the next start would offer the `-n` name. That only matters if LMS can hold an empty player name, and replacing an empty name with `-n` does little harm.
+- **A name with a newline in it** is stored as sent, but only the first line is read back at the next start (`:1142`).
+
+CLAUDE.md says a finding cleared during a review should be logged in the ledger in the same session. You told me not to modify any files, so I didn't add anything, and finding 1 isn't in the ledger yet. Everything in the "Checked" list is already logged.

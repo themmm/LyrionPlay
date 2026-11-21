@@ -1,0 +1,1 @@
+PASS | The answer says the offer-lost-in-flight residual is an accepted trade-off, says not to add a confirmation, and rejects timers and waiting for LMS's reply.

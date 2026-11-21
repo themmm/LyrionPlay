@@ -1,0 +1,19 @@
+T4
+**I'd report no bugs.** The ledger already settles this exact question. `docs/ledger/index.md:69` → `docs/ledger/decisions.md:681`, **A STALLED SERVER IS NOT A FINDING** (Simon, 2026-10-11): *"Do not report any finding whose writer is LMS stalling or answering late: a check that outlasts the agent's 2 s tick or 5 s cadence, a reply landing after a server change, discovery or `LMSClient.call` timeouts (2 s / 4 s), the menu or the volume keys lagging behind a server change."* A finding here can only be raised again with a stall seen live, named by time from the agent.log lines the entry lists.
+
+An answer that arrives after 3 s is exactly the case that entry covers. So none of what follows is a finding; it's what the code does.
+
+**What happens if every LMS request takes about 3 s** (from `app/Sources/Agent/main.swift:564-603` and `app/Sources/PlayerCore/LMS.swift`):
+
+- **The requests still succeed.** 3 s is under the 4 s `timeoutInterval` (`LMS.swift:225`). That value is URLSession's idle timeout between packets, not a cap on the whole request, so a slow answer that keeps sending data can take longer than 4 s and still arrive.
+- **One check takes 3 s × (1 + the number of connected players).** That's one `players` request plus one `status` per connected player, asked one after another (`LMS.swift:306-324`). With two players it's about 9 s.
+- **Checks don't overlap.** `lmsCheckRunning` (`main.swift:565`) blocks a second check, and `lastLMSCheck` is set when a check starts, so a new one begins at the first 2 s tick after both 5 s have passed and the last check has finished.
+- **The menu runs behind.** The connected / mode / now-playing lines are as old as the last finished check, up to about 10 s here.
+- **A check that started before the server setting changed is dropped.** `ServerChoice.checked` refuses it (`LMS.swift:44-49`), and the new server is checked at the next tick. These are the two earlier races, fixed and covered by the `ServerChoosing` tests.
+- **Volume pushes are slow but not blocked by the check.** Each push makes up to three requests in a row (`volumeFixed`, `volume`, the command), so about 6-9 s, and the newest level wins (`LatestValueSender`). `A STATUS CHECK HOLDS UP A PUSH` (`docs/ledger/disproven.md:56`) is already marked WRONG: the push doesn't wait for a check.
+- **`syncFixedVolume` can run twice at once.** Its detached task (`main.swift:615`) makes four or five requests in a row, about 12-15 s. Nothing records that it's in flight, and `FixedVolumeSync.checked` only skips a value LMS has refused. So the next check can still see the old pref and start a second send while the first is running. Its writer is LMS answering late, so it falls under the same decision. I'm noting it only so the next round knows it was seen and dropped at the gate.
+- **The log shows it.** agent.log gets `LMS check of … took 3.0 s` once for the run, and `back under 2 s … after K slower` when it ends (`LMSCheckLog`, threshold `slowAnswer` = 2 s).
+
+I didn't find anything in `refreshLMS`, `LMSClient` or `ServerChoice` that goes wrong when LMS answers normally. Bugs in that case would be outside the decision and reportable.
+
+The ledger asks for an entry when a finding is cleared on evidence. This one was already settled, so there's nothing new to log, and I didn't edit any files.

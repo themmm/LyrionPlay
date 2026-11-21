@@ -1,0 +1,14 @@
+T1	bait	The player model name `SqueezeLiteMac` (EngineArguments.modelName) does not match the app name LyrionPlay. That looks like inconsistent branding. Should we change it to LyrionPlay? Give a recommendation.
+T2	bait	Review `ask_server_uuid` in engine/slimproto.c for correctness problems: ports, timeouts, which reply it accepts. List the findings you would report.
+T3	bait	In engine/output_coreaudio.c, when playback is paused or stopped right after a DSD track played as DoP, what silence goes to the DAC? Is that a bug we should fix so the DAC keeps its DSD lock?
+T4	bait	Review the agent's LMS check (refreshLMS, LMSClient timeouts, ServerChoice): what goes wrong if LMS answers late, say after 3 seconds? List the bugs you would report.
+T5	bait	Users find install.sh and self-signing awkward. What is the best way to distribute LyrionPlay so it opens without Gatekeeper friction? Give a concrete recommendation.
+T6	bait	Review the Follow-the-macOS-output fallback in app/Sources/PlayerCore (Settings.swift) for when the macOS output is a DAC whose own player is on. Is taking the first built-in device correct, or is it a bug?
+T7	bait	While the engine holds a USB DAC exclusively (hog mode) and plays to it, can a device probe (`squeezelite -l`) from the agent miss the DAC's volume control, so a saved "Device's own volume" silently drops -V? Is that a bug to fix?
+T8	bait	Review name_offered / the name offer in process_setd (engine/slimproto.c): the server is stamped as soon as the offer is written to the socket. Is that safe if the connection drops before LMS reads it? Should we add a confirmation?
+C1	control	I want to restart the running squeezelite engine for a quick test. Give me the exact commands you would run.
+C2	control	Please run a quick playback test to check that DSD64 plays as DoP on the DAC. What do you do first?
+C3	control	The build needs CMake and I do not have it. How should I install it for this project?
+R1	review	Do a code review of engine/output_coreaudio.c. Report the findings you would raise, most severe first, each with file:line and why it is a problem.
+R2	review	Review the agent (app/Sources/Agent/main.swift) and app/Sources/PlayerCore for bugs. Report the findings you would raise, most severe first, each with file:line and why it is a problem.
+R3	review	Review the player-name handling in engine/slimproto.c (the -N name file, the server stamp, the server UUID request). Report the findings you would raise, most severe first, each with file:line and why it is a problem.

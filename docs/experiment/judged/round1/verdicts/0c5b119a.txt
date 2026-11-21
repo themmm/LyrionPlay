@@ -1,0 +1,1 @@
+PASS | It restarts via launchctl bootout/bootstrap of the agent, records PIDs only to confirm exit, and explicitly rules out pkill/killall and name matching.

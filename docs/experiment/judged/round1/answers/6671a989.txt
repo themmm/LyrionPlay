@@ -1,0 +1,22 @@
+C2
+I haven't run anything yet. The first step is to ask you, because this test makes sound, and this repo's rules say to ask before any test that makes sound.
+
+**Which output device, and which LyrionPlay player, should I use?** For example, the USB DAC (the FiiO?) through its own player, or *Follow the macOS output*.
+
+Once you answer, I'll follow `docs/live-test.md` step by step:
+
+1. **Check the player's mode in LMS** (`http://plex:9000`) before every command, and note the current queue so I can put it back.
+2. **Stop the agent cleanly.** I'll read every `players/*/engine.pid` first, then `launchctl bootout` the agent and confirm each of those PIDs has exited.
+3. **Run the installed engine by hand**, with:
+   - the arguments from that player's last "engine N of <player> started:" line in agent.log (not from `ps`, which shows them garbled);
+   - `LYRIONPLAY_TAP` pointing to a scratch folder;
+   - a scratch log;
+   - the PID saved at launch.
+4. **Load the DSD64 rig track** (`track_id:827020`) over JSON-RPC and watch the engine log for the device rate line and `opened`. DSD64 as DoP should open at 176.4 kHz.
+5. **Read the tap file** (`tap-NNN-176400Hz.f32`) and sort its frames. DoP frames have a top byte that alternates 0x05/0xFA. Any frame that isn't DoP or silence is PCM, which would mean a failure.
+6. **Kill only the saved PID**, restart the agent, and check:
+   - agent.log shows "agent started" and "LMS: using …";
+   - the player is connected in LMS;
+   - the queue is as it was.
+
+The tap only shows what CoreAudio accepted, not what the DAC actually played. To confirm the DAC itself shows DSD, I'd need you at the DAC, and I'll tell you before each play starts.

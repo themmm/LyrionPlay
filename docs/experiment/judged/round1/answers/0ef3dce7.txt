@@ -1,0 +1,26 @@
+T7
+**No. This has already been checked, and it is not a bug.** The code path you describe does exist, but what it relies on doesn't happen: measured on a real DAC, the volume control stays visible while another process holds the device.
+
+**The code path exists.** If a probe ever came back with no volume control (`device.volume == nil`), a saved "Device's own volume" would quietly become Software:
+
+- `VolumeMode.isOffered` offers `.device` only when `device.volume != nil` (`app/Sources/PlayerCore/Settings.swift:37`).
+- `nearestOffered(on:)` then turns the saved choice into `.software` (`Settings.swift:52`).
+- `EngineArguments` therefore leaves out `-V`.
+
+So everything depends on whether exclusive access hides the volume control from a probe in another process.
+
+**It doesn't. This was measured on 2026-10-12** (ledger §A3, `A HOG DOES NOT HIDE THE VOLUME CONTROL`):
+
+- A scratch process took exclusive (hog) access to the DragonFly Black v1.5. The installed `squeezelite -l` then reported `"exclusive_owner":<probe PID>` and still listed `"volume":{"control":"main","db_min":-64.00,"db_max":0.00,"mute":true}`.
+- A second run did the same with audio actually flowing (`DeviceIsRunningSomewhere` 1, 404 IOProc calls in 4 s). `-l` still reported the volume control.
+- In the probe's own view the `VolumeScalar` property stayed present and settable.
+
+On that evidence, /code-review 2026-10-12 (3) findings 1 and 2 (this scenario, and the follow-on worry that Save would write the wrong choice for every listed device) were logged **DISPROVEN** (§C `CODE-REVIEW 2026-10-12 (3)`). Nothing in the code was changed, because the failure has no trigger.
+
+**What the measurement didn't cover** (also written in the ledger):
+- Only the DragonFly was tested.
+- The device was held by a scratch probe, not by the engine during an LMS play. The probe used the same HAL calls the engine does, so I'd expect the same result, but that exact case wasn't run.
+
+The ledger's rule is to raise this again only with a named device whose `-l` output loses `volume` while it is held. If such a device turns up, the fix would be to keep the last known volume control while the engine holds the device. Without that evidence there is nothing to fix.
+
+I didn't modify any files.

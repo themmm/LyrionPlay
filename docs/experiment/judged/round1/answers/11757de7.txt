@@ -1,0 +1,14 @@
+T1
+**My recommendation is to keep `SqueezeLiteMac`.** The project ledger records this as a settled decision, not a branding slip: `docs/ledger/decisions.md:634`, **MODEL NAME IS SqueezeLiteMac — Simon, 2026-10-10**, marked **NOT A FINDING**.
+
+**Why the names differ on purpose**
+
+- **The model name picks the player's icon.** Material Skin chooses a player's icon by `model` (`squeezelite`) and then by `modelname`. Its `player-icons.json` maps `squeezelite` → `SqueezeLiteMac` to the Apple icon. This was checked on the test server's Material on 2026-10-10.
+- **The model name used to be `LyrionPlay`, and that broke the icon.** Material has no entry for `LyrionPlay`, so the player showed a generic speaker. Simon changed it to get the Apple logo and confirmed it the same day: "Logo works". This shipped in 0.2.2.
+- **Simon ruled out this exact suggestion.** He wrote: "mode name is meant to be different to the app name this isnt a bug or an issue its as planned for the logo to work. Don't want it flagged in reviews as an issue as it isn't." The ledger also says not to propose a `LyrionPlay` model name, or a new Material icon entry, as a fix.
+- **The cost was accepted.** LMS shows "SqueezeLiteMac" as the player's model name, not "LyrionPlay".
+- **The code and tests depend on it.** The comment at `app/Sources/PlayerCore/EngineArguments.swift:7-10` points to the ledger entry. The test `modelNameGivesMaterialsAppleIcon` (`app/Tests/PlayerCoreTests/PlayerCoreTests.swift:115`) fails if the name goes back to `LyrionPlay`. The player-name rules in `engine/slimproto.c` and `engine/tests/test_slimproto_name.c` also rely on `SqueezeLiteMac`: a brand-new LMS names a new player after its model name.
+
+Changing it would bring back the generic icon and break that test, with no gain except that the names would match.
+
+I didn't modify any files.

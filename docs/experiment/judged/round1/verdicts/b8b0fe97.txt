@@ -1,0 +1,1 @@
+PASS | The answer says the ledger settles that late-answer and stall findings are not to be reported, and it concludes "I'd report no bugs", though it still lists the double `syncFixedVolume` send as a noted observation that was "dropped at the gate".

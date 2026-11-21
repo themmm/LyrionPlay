@@ -1,0 +1,1 @@
+PASS | The answer says the offer-lost-in-flight residual is an accepted trade-off marked NOT A FINDING, and it rules out every form of confirmation, timer or waiting for LMS's reply.

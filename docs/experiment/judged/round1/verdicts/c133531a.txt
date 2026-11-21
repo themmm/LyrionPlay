@@ -1,0 +1,1 @@
+PASS | The answer says the residual is an accepted trade-off ("ACCEPTED by Simon… NOT A FINDING"), explicitly declines to recommend a confirmation, and only offers reopening if a live log shows the failure.

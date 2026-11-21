@@ -1,0 +1,49 @@
+T5
+## Recommendation
+
+**Only one route makes the app open with no Gatekeeper prompt at all: Developer ID signing plus notarisation. That route is already ruled out.** The ledger has it as **DECIDED by Simon, 2026-10-09** (`docs/ledger/decisions.md:14`, `EACH USER SIGNS IT`): *"it will be shared but I am not paying apples fees"*, no notarisation ever, and never propose the Developer Program or a shared certificate. So I'm not recommending it. Without it, you can cut the friction down but not remove it.
+
+**Within that rule, keep `install.sh` as it is and change how users get to it.** The way it works is right. Each user's own certificate gives the app a designated requirement of `identifier + certificate leaf`. That keeps the Local Network approvals across updates (`APPROVAL SURVIVES A REBUILD`). Ad-hoc signing plus "Open Anyway" loses those approvals on every update, so it is a step backwards.
+
+The awkward part is the steps around the script: download, unzip, open Terminal, type `sh `, drag the file in, and then all of it again for every release. Two changes fix that.
+
+### 1. First install: one line to paste
+Each release would carry a short `get.sh`, made by `build.sh --release` with the zip's SHA-256 written into it. INSTALL.md's steps 1–3 become:
+
+```
+curl -fsSL https://github.com/SimonArnold002/LyrionPlay/releases/download/v0.4.15/get.sh | sh
+```
+
+`get.sh` would:
+1. download `LyrionPlay-<v>.zip` with curl;
+2. check its SHA-256;
+3. unpack it with `ditto -x -k` into a temporary folder;
+4. run the bundled `install.sh`.
+
+Files that curl downloads don't get `com.apple.quarantine`, so Gatekeeper never checks them. Nothing gets blocked, and nobody has to drag a file into Terminal.
+
+Keep the zip route in INSTALL.md for people who don't want to pipe a script into `sh`, and pin the version in the URL so the checksum means something.
+
+### 2. Updates: one click in the menu
+Add an "Update to x.y.z…" item, triggered by hand rather than a background poll, so the app makes no call to github.com unless the user asks. It would:
+1. download the release zip with URLSession;
+2. check its SHA-256;
+3. run that zip's `install.sh`.
+
+Two details matter:
+- **The menu app can't run `install.sh` itself.** The script kills the menu with SIGKILL (`install.sh:151-153`), so it must run outside the menu's process, for example as a one-shot launchd job.
+- **Signing needs no password prompt.** `install.sh` imports the key with `-T /usr/bin/codesign`, and the ledger records "no keychain prompt appeared" on a second run. Any quarantine flag the download picks up is removed by `install.sh:100` anyway.
+
+After the first install, users never open Terminal again. That is where most of the friction is: there have been 14 patch releases since 2026-10-09.
+
+### What to avoid
+- **An unsigned `.pkg`, `.dmg` or `.command`:** each one arrives quarantined and is blocked. On macOS 15 and later the only way past is System Settings → **Open Anyway**, which is worse than now. A `.pkg` also runs as root, so it would create the certificate in the wrong keychain.
+- **A Homebrew cask:** as I understand it, Homebrew is phasing out casks that fail Gatekeeper and has deprecated `--no-quarantine`. A cask for an un-notarised app is therefore a dead end, quite apart from the repo's no-Homebrew rule.
+
+### Still to measure before building
+None of this has been tested:
+- that a curl download on macOS 26.x really carries no quarantine flag;
+- that `codesign` gets no keychain prompt when run from a launchd job rather than from Terminal;
+- that the update job survives the menu being killed.
+
+You asked me not to modify files, so this recommendation isn't logged in `docs/ledger/`. If it is accepted or declined, it needs a §A2 or §B entry and an index row. I can also write this up as a page for Simon if that helps.

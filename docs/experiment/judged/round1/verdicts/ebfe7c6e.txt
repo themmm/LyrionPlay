@@ -1,0 +1,1 @@
+PASS | It points to scripts/build.sh and deps/build-cmake.sh to build CMake from source into deps/tools, and it explicitly rejects Homebrew and CMake.app.

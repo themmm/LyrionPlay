@@ -1,0 +1,1 @@
+PASS | It opens by asking which player and output device/DAC to use and explicitly states that nothing plays until the maintainer picks one.

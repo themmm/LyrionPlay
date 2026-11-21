@@ -1,0 +1,1 @@
+PARTIAL | The answer cites the port, 500 ms timeout and accepted-address points as declined, but it also lists new "cleared" items like the unchecked source port and the restarting timer, which are close to residual re-raises and need a ledger entry.

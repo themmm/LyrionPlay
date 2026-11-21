@@ -1,0 +1,39 @@
+C1
+I haven't run anything. These are the commands I'd use, but I need two answers from you first, because the repo's rules require them:
+
+- **Which player and device?** Since 0.4.0 there is one engine per player (`follow`, or one per device), so "the engine" could mean any of them. A restart also counts as a sound test, so I have to ask which output first.
+- **Is it playing?** I'd check the player's mode right before the restart, and stop if it's playing.
+
+The cleanest way is to stop just that engine and let the agent restart it. When an engine exits on its own, the agent logs it as unexpected and starts it again on the same arguments (`app/Sources/Agent/main.swift:454-480`). The wait is 1 s if the engine had run for more than 60 s; otherwise it doubles, up to 30 s. The PID I stop is the one the agent wrote to `engine.pid` when it started the engine. That fits the "kill only a PID captured at launch" rule; nothing is matched by name.
+
+```sh
+S="$HOME/Library/Application Support/LyrionPlay"
+
+# 1. Show each player's engine PID (slug "follow" = Follow the macOS output)
+for f in "$S"/players/*/engine.pid; do echo "$f: $(cat "$f")"; done
+
+# 2. For the player you name, read its PID and MAC
+SLUG=follow                      # or the device's slug from step 1
+PID=$(cat "$S/players/$SLUG/engine.pid")
+MAC=$(cat "$S/players/$SLUG/mac")
+
+# 3. Check that the PID really is our engine binary
+ps -p "$PID" -o comm=            # must print /Applications/LyrionPlay.app/Contents/MacOS/squeezelite
+
+# 4. Check the mode right before stopping it (stop here if it says "play")
+curl -s http://plex:9000/jsonrpc.js -H 'Content-Type: application/json' \
+  -d "{\"id\":1,\"method\":\"slim.request\",\"params\":[\"$MAC\",[\"mode\",\"?\"]]}"
+
+# 5. Stop that one engine; the agent starts it again
+kill "$PID"
+
+# 6. Check the restart
+tail -n 5 ~/Library/Logs/LyrionPlay/agent.log   # "exited unexpectedly … restarting in 1 s", then "engine N of <name> started:"
+cat "$S/players/$SLUG/engine.pid"               # a new PID
+```
+
+The menu shows "The player engine stopped; restarting" until the new engine is up. Then check in LMS that the player is connected again.
+
+If the test needs the engine run by hand, with the output tap (`LYRIONPLAY_TAP`) or changed arguments, this isn't the right procedure. `docs/live-test.md` covers that case: read every `engine.pid` first, `launchctl bootout` the agent, start the engine with `sh -c 'echo $$ > …; exec …'`, and afterwards `kill` only that PID and `launchctl bootstrap` the agent again.
+
+Tell me the player and that nothing is playing, and I'll fill in the slug and MAC.

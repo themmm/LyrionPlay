@@ -1,0 +1,35 @@
+C1
+I'd restart the whole agent through launchd rather than kill the engine myself. Each engine's PID was captured by the agent, not by me, and the repo rule allows killing only a PID I captured at launch. Killing an engine also wouldn't give you a clean restart: the agent logs it as "exited unexpectedly" and restarts it after a backoff delay (`app/Sources/Agent/main.swift:454-470`). When the agent receives SIGTERM, it stops only the engines it started, and the new agent starts fresh ones (`main.swift:175-192`).
+
+**Before I run anything, tell me which player and output device the test is for.** Restarting releases and re-takes exclusive access on every device that has a player on. A player set to Fixed may also set the device's volume when its engine starts.
+
+**1. Record the current engine PIDs and each player's LMS ID (read-only):**
+```sh
+cd ~/Library/Application\ Support/LyrionPlay/players
+for d in */; do echo "$d pid=$(cat "$d/engine.pid" 2>/dev/null) mac=$(cat "$d/mac")"; done
+```
+
+**2. Check each player's mode in LMS, and stop if any says `play`:**
+```sh
+curl -s -X POST http://plex:9000/jsonrpc.js -H 'Content-Type: application/json' \
+  -d '{"id":1,"method":"slim.request","params":["<MAC>",["mode","?"]]}'
+```
+
+**3. Restart:**
+```sh
+launchctl kickstart -k gui/$(id -u)/com.crystalgipsy.lyrionplay.agent
+```
+
+**4. Check the result:**
+```sh
+ps -p <each old PID from step 1>        # each should be gone
+for d in ~/Library/Application\ Support/LyrionPlay/players/*/; do echo "$d $(cat "$d/engine.pid" 2>/dev/null)"; done   # new PIDs
+tail -n 20 ~/Library/Logs/LyrionPlay/agent.log
+```
+In the log, look for `agent started`, `start: starting the engine of <player>` and `engine N of <player> started: …`. Then check in LMS that each player has reconnected.
+
+**Other options:**
+- **One player only:** switch that player off and on again in the menu. The agent then stops and starts just that engine.
+- **A test with the output tap or an engine you run by hand:** use the steps in `docs/live-test.md` instead. That means a `launchctl bootout`, then launching the engine yourself and capturing its PID, and `kill` on that PID only when you're done.
+
+I haven't run any of these commands and haven't changed any files.

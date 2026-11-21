@@ -1,0 +1,41 @@
+R2
+I found two bugs worth raising and one minor nit. I only read code and changed no files. The ledger has nothing on any of them; I checked each subject in `docs/ledger/index.md` and the full-disk entries in `closed.md`.
+
+### 1. A failed log write crashes the agent (medium; the mechanism is documented, I did not run it here)
+**`app/Sources/Agent/main.swift:17-20`**: `Log` writes with `FileHandle.seekToEndOfFile()` and `write(_:)`. These are the old, non-throwing calls. Apple documents that `write(_:)` raises an Objective-C exception "if no free space is left on the file system, or if any other writing error occurs". Swift can't catch that exception, so the agent aborts.
+
+What happens on a full disk:
+- **The agent dies at its next log line.** One example is `makeSlot`'s "cannot create the identity…" line (`main.swift:331`). That is the exact case the round (8) retry (`scheduleIdentityRetry`) was built for: "a full disk freed". The agent dies before it schedules any retry.
+- **It can't stay up after a restart.** KeepAlive restarts it, and `run()` crashes again at `log("agent started…")` (`main.swift:153`). That is before `stopOrphanedEngines`, so it crash-loops for as long as the disk is full.
+- **The music stops.** Without the agent, the engines are orphans and die at their next stdout report (§A3 `AN ORPHAN DIES AT ITS NEXT REPORT`). So playback stops at the next track or volume change, and nothing restarts it until space is freed.
+
+Simon closed the full-disk *identity* case untested (round (7) finding 3). This is a different defect with the same trigger, so it's his call whether it waits for a user report.
+
+**Fix:** use the throwing `try handle.seekToEnd()` and `try handle.write(contentsOf:)`, and ignore their errors.
+
+### 2. The menu can say an engine is restarting when nothing will restart it (low; confirmed by reading)
+**`main.swift:400` and `:469`** set `slot.problem`. Only a successful `startEngine` clears it (`:408`). `writeStatus` shows it ahead of `setupProblem` (`:682`).
+
+The case: an engine exits unexpectedly or fails to start, and its device is then unplugged before the restart runs. `reconcile` finds no plan for that player, sets `setupProblem = "Not connected"` (`:298`), and starts nothing. The menu still says "The player engine stopped; restarting" for as long as the DAC is out. The same applies to Follow's "No output device".
+
+**Fix:** clear `slot.problem` when `plan[key] == nil` (or in `stopEngines`).
+
+### 3. Nit: a killed engine can still hold the device when its replacement starts (low)
+**`main.swift:433-436`**: an engine that ignores SIGTERM for 3 s gets SIGKILL, and nothing waits for it to exit. `reconcile` then starts the new engine on the same device at once (`:293`). This breaks the "two engines never hold one device" promise in the comments at `:244` and `Players.swift:58`. The harm is small: the new engine's `hog()` sees the old PID ("held exclusively by another process"), fails, and retries. A short wait after the SIGKILL would make the comment true.
+
+### Checked and not raised
+- **Already settled in the ledger:**
+  - LMS-stall timing in `refreshLMS`/`ServerChoice` (`A STALLED SERVER IS NOT A FINDING`).
+  - A slider move between `volumeRestore`'s two reads being undone (accepted, `THE DVC HOOK SAVES A FADED VOLUME`).
+  - An identity retry starting a waiting engine early (`A RETRY STARTS A WAITING ENGINE`).
+  - The planned device's live rate in the menu while its engine is down (`CODE-REVIEW 2026-10-16`).
+  - Follow's built-in fallback (`FOLLOW'S BUILT-IN FALLBACK`).
+  - Discovery asking port 3483 (`TWO LMS ON ONE HOST`).
+- **Checked, no problem found:**
+  - The `expectedExit`/`engineExited` ordering when engines are stopped and restarted back to back.
+  - `LatestValueSender`'s lock and drain hand-off.
+  - `EnginePlan.changes` and the switched-off path in `reconcile`.
+  - `OutputFollow`'s deferral and when it lets go.
+  - `VolumePush` against the engine: it reports volume only under `-V` (`volume_listener`, `output_coreaudio.c:503`), so a Fixed player never pushes.
+  - `FixedVolumeSync` refusals.
+  - Engine-PID ownership in `stopOrphanedEngines`.

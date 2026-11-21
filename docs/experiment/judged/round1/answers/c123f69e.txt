@@ -1,0 +1,40 @@
+C1
+I'd use the repo's documented route: stop and start the **agent** with `launchctl`. The agent then stops each engine using the PID it recorded when it started it, and starts them again. I wouldn't kill an engine myself. The project rule is "kill only a PID you captured at launch", and I didn't launch these.
+
+I haven't run anything. Before any of this I'd ask you which player you're testing. Restarting the agent restarts **every** player that is on, and a paused player comes back stopped.
+
+**1. Check each player isn't playing or paused** (repeat this right before step 3, not just now)
+```sh
+for mac in 96:57:54:14:bd:87 b6:4e:cb:e9:16:34; do
+  curl -s http://plex:9000/jsonrpc.js \
+    -d "{\"id\":1,\"method\":\"slim.request\",\"params\":[\"$mac\",[\"mode\",\"?\"]]}"; echo
+done
+```
+These are the MACs the ledger records for *Follow the macOS output* and the DragonFly's player. `cat ~/Library/Application\ Support/LyrionPlay/players/*/mac` shows the current ones.
+
+**2. Note the engine PIDs before stopping** (the agent deletes each `engine.pid` as it stops that engine)
+```sh
+S="$HOME/Library/Application Support/LyrionPlay"
+for f in "$S"/players/*/engine.pid; do echo "$f: $(cat "$f")"; done
+PIDS=$(cat "$S"/players/*/engine.pid 2>/dev/null)
+grep 'started:' ~/Library/Logs/LyrionPlay/agent.log | tail -3
+```
+
+**3. Stop the agent and check every engine has exited**
+```sh
+launchctl bootout gui/$(id -u)/com.crystalgipsy.lyrionplay.agent
+for p in $PIDS; do kill -0 "$p" 2>/dev/null && echo "$p STILL RUNNING" || echo "$p exited"; done
+```
+When it stops, the agent sends each engine SIGTERM, waits up to 3 s, then sends SIGKILL (`stopEngines`, `app/Sources/Agent/main.swift:416`). Every PID should show "exited".
+
+**4. Start it again and check it's back**
+```sh
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.crystalgipsy.lyrionplay.agent.plist
+sleep 8; tail -20 ~/Library/Logs/LyrionPlay/agent.log
+```
+- **agent.log:** look for "agent started: LyrionPlay 0.4.14 …", an "engine N of <name> started: …" line for each player, and "LMS: using Simons Music".
+- **LMS:** run step 1 again. Each player should be connected, and its queue should be as before.
+
+**A faster way, if you only want one engine restarted:** `kill <pid>` using that player's `engine.pid` from step 2. The agent treats it as an unexpected exit and restarts just that engine after its backoff, which is 1 s if the engine had run for more than 60 s (`engineExited`, `main.swift:454`). I'd only do this with your OK, because that PID is the agent's record, not one I captured.
+
+On a player using the device's own volume, LMS sends its saved level about 5 ms after the engine reconnects. If that level differs from where the device is now, the device moves to it. So treat the restart like a sound test: you or Simon should know it's coming.

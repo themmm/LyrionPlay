@@ -1,0 +1,19 @@
+T8
+**Short answer:** No, it isn't perfectly safe, and that is known. This exact trade-off was weighed and accepted on 2026-10-15. Don't add a confirmation. The ledger records it as not a finding under `AN OFFER LOST IN FLIGHT` (§A2), and it says not to propose a confirmation in any form.
+
+**What the code does.** I checked that `engine/slimproto.c` still matches the ledger:
+- `sendSETDName` (`slimproto.c:280`) returns true only if `send_packet` wrote every byte of the header and the name.
+- `process_setd` calls `name_offered()` only on that true result (`slimproto.c:727`).
+- `name_offered()` sets `name_from_lms`, stamps the server, and writes the name file (`slimproto.c:699`).
+- An offer that fails to write stamps nothing. That is the fix for CODE-REVIEW 2026-10-15 (6) finding 3.
+
+**The gap you describe is real but narrow.** It happens only if the kernel accepts the bytes and the connection then drops before LMS reads them. That takes a drop within about one round trip of the offer: under 1 ms on the LAN, tens of ms over Tailscale. The server is then stamped without having the name. At the next connect the player sends an empty answer, so it takes LMS's own name, which on a brand-new LMS is the default "SqueezeLiteMac". You can see this happen, and renaming the player in LMS fixes it.
+
+**Why a confirmation doesn't help:**
+1. **There is often nothing to wait for.** If LMS already has the offered name, it sends no reply. `Prefs::Base::set` returns early when the value is unchanged (Base.pm:95). So "wait for LMS's `setd`" would never stamp that server.
+2. **Waiting is what the code did before, and it caused the bug.** Before round (5)/(6), the stamp came only from LMS's answer. Players whose offer got no answer were never stamped. A rename held on that server then crossed the next offer, and the two names bounced back and forth: `TWO NAMES IN FLIGHT LOOP`. On the DragonFly that was about 240 renames a second for 8½ minutes. Losing the name in this corner is the milder failure, and the loop needed a drop in an equally short window.
+3. **The other ideas were ruled out too.** A timer after the offer, a second empty answer, and checking the socket's send queue were all named in the decision as things not to propose.
+
+**When to reopen it:** only if the drop is actually seen. That means an engine log showing an offer, then the connection lost within about a second, then LMS's default name at the next connect. Without that, the record says to leave it as it is.
+
+I didn't change any files.

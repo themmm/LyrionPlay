@@ -1,0 +1,18 @@
+T1
+**Recommendation: keep `SqueezeLiteMac`.** The mismatch with the app name is intentional, and the project ledger has already settled the question.
+
+**The ledger entry:** `docs/ledger/index.md:51` marks it **BY DESIGN, NOT A FINDING — DECIDED + VERIFIED 2026-10-10**. The full entry is `MODEL NAME IS SqueezeLiteMac` in `docs/ledger/decisions.md:634-656`. Simon decided it and wrote: *"mode name is meant to be different to the app name this isnt a bug or an issue its as planned for the logo to work. Don't want it flagged in reviews as an issue as it isn't."* The entry also says not to propose `LyrionPlay` as the model name, and not to add a new Material icon entry as a workaround.
+
+**Why the name has to be `SqueezeLiteMac`:**
+- The Material Skin web interface for LMS picks each player's icon from its `player-icons.json`. It looks the player up by `model` first, then by `modelname`. LMS's `model` for this player stays `squeezelite`, and `squeezelite` → `SqueezeLiteMac` maps to `{"svg":"apple"}`. So this name is what gets the player Material's Apple icon.
+- The model name used to be `LyrionPlay`. Material has no icon for that name, so the player showed the generic speaker icon. The fix shipped in 0.2.2, and Simon checked it in Material the same day ("Logo works").
+- Material's rules that run before the modelname lookup can't match this player by mistake. Its firmware string doesn't end in `-pCP`, and its MAC address never starts with the Raspberry Pi prefixes `b8:27:eb:` or `dc:a6:32:`.
+- If a user picks a different icon for a player in Material, their choice still wins.
+
+**What a rename would break:**
+- The player would go back to the generic speaker icon in Material.
+- The test `modelNameGivesMaterialsAppleIcon` would fail. It was written to fail with `LyrionPlay`.
+
+**The accepted trade-off:** LMS shows "SqueezeLiteMac" as the player's model name instead of "LyrionPlay". The code says so in the comment on `app/Sources/PlayerCore/EngineArguments.swift:6-10`, which points back to the same ledger entry.
+
+I didn't change any files.

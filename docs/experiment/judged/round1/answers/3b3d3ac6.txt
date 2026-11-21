@@ -1,0 +1,15 @@
+C2
+The first thing I do is ask you which player and which output device to use. Nothing has run yet. This repo's working rules say any test that makes sound waits until you've picked the device. Changing LMS's or the device's volume counts as that kind of test too.
+
+So, before anything plays:
+
+1. **Which player and DAC should I use?** On your rig, only the FiiO M11 Plus can take DSD64 as DoP, because DoP needs 176.4 kHz. The DragonFly tops out at 96k, so on it DSD64 would be converted to PCM and the test wouldn't prove anything. Should it be the FiiO, through *Follow the macOS output* or its own device player?
+2. **Is DoP switched on for that player?** It's off by default, and it's set separately for each player. If it's off, DSD is converted to PCM.
+3. **Please turn the FiiO's volume knob down first.** DoP always plays at full level and ignores LMS's volume slider.
+
+Once you've answered, I'll check that player's mode and note its queue so I can put it back. I'll check the mode again before every LMS command. Then I'll play DSD64 track 827020 and look for these lines in the engine log:
+- "format: DOP, rate: 176400Hz"
+- one `device rate 176400`
+- one `opened`
+
+The menu should read "DSD64 (2.8224 MHz) · DoP". The log only shows what CoreAudio accepted, though. The real proof is the FiiO's own display showing DSD, so I'll tell you right before it plays and you can watch the DAC.

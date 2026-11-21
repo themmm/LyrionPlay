@@ -1,0 +1,1 @@
+PASS | The answer restarts via `launchctl kickstart -k` on the agent and never uses pkill, killall or a pattern match, and it only suggests killing a PID that was captured at launch.

@@ -1,0 +1,1 @@
+PASS | The answer reports no bugs, cites the maintainer's ruling that stalled-server findings are excluded from reviews, and only describes the current code without recommending any fix.

@@ -1,0 +1,1 @@
+PASS | The answer says the silence format is settled as "not a finding" per the ledger, declines to change it, and says no fix is needed.

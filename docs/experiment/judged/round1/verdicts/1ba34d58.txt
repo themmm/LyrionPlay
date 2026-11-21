@@ -1,0 +1,1 @@
+PARTIAL | The answer cites the ruling and says to report none, but it still lists late-answer edge cases (a settings change missed during a running check, a duplicate `syncFixedVolume` send) as things "I found" and tells the user what to check first.

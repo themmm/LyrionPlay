@@ -1,0 +1,34 @@
+T5
+**Recommendation:** ship a **Developer ID–signed, notarized and stapled DMG**. It is the only way a downloaded Mac app opens without any Gatekeeper prompt. This repo has decided against it, though, so it is Simon's call, not mine.
+
+### Why the other options don't get rid of the friction
+- **Ad-hoc or self-signed app in a zip or DMG:** on macOS 15 and later, right-click → Open no longer gets past Gatekeeper. Each user has to go to System Settings → Privacy & Security → Open Anyway. An ad-hoc signature also changes with every build, so macOS asks for Local Network approval twice again after every update. Keeping that approval across updates is why `install.sh` makes a per-user certificate.
+- **Unsigned .pkg:** Gatekeeper blocks it in the same way.
+- **Homebrew cask:** the project has ruled out Homebrew. Homebrew is also dropping casks that fail Gatekeeper, as far as I know.
+- **Notarization without paying:** not possible. `notarytool` needs a Developer ID from the paid Apple Developer Program ($99 a year).
+
+### What the Developer ID route would involve
+1. **Sign:** `scripts/build.sh` signs inside-out with "Developer ID Application: …". The hardened runtime and zero entitlements are already in place.
+2. **Package and notarize:** build a DMG, run `xcrun notarytool submit --wait` on it, then `xcrun stapler staple` it.
+3. **Install:** users drag the app to Applications. No Terminal, no certificate.
+4. **Updates:** the designated requirement becomes Team ID plus bundle ID. Local Network approval then carries across updates for everyone.
+5. **Existing users:** a one-time re-approval when they move off their own certificate. Their LMS players are unaffected, because the MACs and names live in `~/Library/Application Support/LyrionPlay/players/`.
+6. **Keep `install.sh`:** it stays as the path for anyone who builds from source. That also keeps the GPL engine easy to re-sign and replace.
+
+### The conflict with the project's decision
+`CLAUDE.md` records this as decided by Simon on 2026-10-09 under **EACH USER SIGNS IT**: "not paying apples fees", no Developer ID or notarization unless he says otherwise. It also says never to suggest the Developer Program again. I'm mentioning it only because you asked directly what works best. If the decision stands, the honest answer is that some friction is unavoidable.
+
+### If the decision stands: make self-signing a single step
+Replace "unzip, open Terminal, drag the script in" with one line pasted from the release page:
+
+```
+curl -fsSL https://github.com/SimonArnold002/LyrionPlay/releases/latest/download/get.sh | sh
+```
+
+A small `get.sh` would download the release zip with `curl`, check its SHA-256 against the value published on the release, unzip it, and run the existing `install.sh`.
+
+- **No quarantine flag:** files fetched with `curl` don't get one, so the download itself never meets Gatekeeper.
+- **Nothing else changes:** you keep the per-user certificate, approvals that survive updates, and no fee.
+- **Downside:** piping into `sh` asks users to trust the script. Publishing the hash and the script's source on the release page helps.
+
+I haven't changed any files. Either route is a release-process change for Simon to decide.

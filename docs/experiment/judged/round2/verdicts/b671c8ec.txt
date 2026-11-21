@@ -1,0 +1,1 @@
+{"findings":[{"title":"process_setd assumes the incoming name ends with a NUL inside the packet (stale bytes in the name, log, confirmation and file; strlen overrun)","verdict":"NEW","ledger":""}],"cited":6}

@@ -1,0 +1,16 @@
+T7
+No, it doesn't happen, and it isn't a bug to fix. This was already checked and logged as disproven. I didn't change any files.
+
+**How it could happen in theory.** The code does have the chain you describe. `VolumeMode.isOffered` offers *Device's own volume* only when the probe found a volume control (`case .device: return device.volume != nil`, `app/Sources/PlayerCore/Settings.swift:37`). If it didn't, `nearestOffered(on:)` reads a saved `.device` as `.software` (`Settings.swift:51-52`). `EngineArguments` then leaves out `-V` (`app/Sources/PlayerCore/EngineArguments.swift:44`). So a probe that missed the control would drop `-V` without saying so.
+
+**Why it doesn't happen.** The ledger entry is §A3 `A HOG DOES NOT HIDE THE VOLUME CONTROL`, and the result was measured on 2026-10-12 with the AudioQuest DragonFly Black v1.5. It ran silently: the player was stopped and the DAC got zeros at its own rate, so it never relocked.
+- A scratch probe took the DragonFly exclusively with `kAudioDevicePropertyHogMode`. While it held the device, the installed `squeezelite -l` still reported `"exclusive_owner":<probe PID>` and `"volume":{"control":"main","db_min":-64.00,"db_max":0.00,"mute":true}`.
+- A second run did the same with the probe also playing to the device (`DeviceIsRunningSomewhere` 1, 404 IOProc calls in 4 s). `-l` still reported the volume control.
+
+So the control stays visible and settable to every process while one process holds the device and plays to it. `find_volume` in `engine/output_coreaudio.c:267` relies on exactly that through its `settable()` check. Without a missed control there's nothing to start the chain. `CODE-REVIEW 2026-10-12 (3)` raised this as findings 1 and 2, and both were closed as disproven on that measurement.
+
+**What wasn't covered:**
+- An LMS play under the engine itself.
+- Any DAC other than the DragonFly.
+
+The ledger says to re-raise this only for a named device whose `-l` output loses `volume` while it's held. That's still the right bar: it's worth reopening if a user's log shows a held device probing without its volume control, and not on the code path alone.

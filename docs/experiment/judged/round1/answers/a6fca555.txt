@@ -1,0 +1,21 @@
+T2
+**I found no new correctness findings in `ask_server_uuid` (`engine/slimproto.c:645`).** Each of the three areas you asked about either checks out or was already decided in the ledger.
+
+**Already settled (I would cite these, not re-raise them):**
+
+| Area | What the code does | Ledger verdict |
+|---|---|---|
+| Port | `ask_server_uuid(slimproto_ip, PORT)` (`slimproto.c:1270`) always asks UDP 3483, even when the player connected to a different slimproto port | **DECLINED, NOT A FINDING**: `TWO LMS ON ONE HOST`. The entry also says not to offer passing `slimproto_port` as a fix. |
+| Timeout | Two tries of 250 ms, so about 500 ms before every HELO when nothing answers | **DECLINED**: `UUID ASK RESIDUALS` (503 ms was measured and accepted) |
+| Which reply it takes | Only a reply whose source address equals the address it asked. A multi-homed LMS that answers from another address gets no UUID, and the address decides instead. | **DECLINED**: `UUID ASK RESIDUALS`. Accepting a reply from any address was offered and declined. |
+
+**Checked and cleared (new, but not worth reporting):**
+- **The request.** `sizeof(request)` sends 6 bytes, `eUUID\0`. The NUL is meant to be there: it is the TLV length byte (0). The test at `test_slimproto_name.c:923` checks this.
+- **Which address it asks.** `ip` is `slimproto_ip`, and it is right in every case: a `serv` switch (`:1236`), a revert to the previous server (`:1250`) and a rediscovery (`:1259`) all update it before the next connect.
+- **Stale replies.** Each call opens a fresh socket, so a late reply to an earlier call can't land in a later one. A late reply to try 1 that arrives during try 2 carries the same UUID, so it doesn't matter.
+- **The reply's source port isn't checked.** Any datagram from the server's address is parsed. To give a wrong UUID it would have to start with `E` and carry a printable `UUID` TLV, so nothing realistic other than LMS can do it. This is the opposite of the declined strictness point, so it isn't covered by `UUID ASK RESIDUALS`.
+- **"Two tries of 250 ms" isn't a hard limit.** `while (poll(..., 250) == 1)` starts a fresh 250 ms wait after every datagram it rejects, so a stream of packets from other addresses to the ephemeral port could stretch the wait. Nothing sends to a fresh ephemeral port, so in practice it is the declined 500 ms.
+- **Errors.** A failed `sendto` stops the asking, and a `poll` that returns -1 (EINTR) ends that try early. Both leave `server_uuid` empty, so the address decides. That is the same outcome as no answer and adds no new failure.
+- **A reply from the right address that doesn't parse.** It ends the try at once and try 2 is sent, so an old LMS with no UUID tag costs two quick round trips, not 500 ms.
+
+**One gap you should know about:** the ledger rule says a finding cleared during a review is logged in the same session. You told me not to modify files, so the last two cleared points (the unchecked source port and the timer that restarts) are not in `docs/ledger/`. If they aren't logged, the next review will raise them again. They would go in §A2 with an index row, citing the reasons above.

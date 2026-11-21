@@ -1,0 +1,1 @@
+{"findings":[{"title":"A failed first stamp write (no older stamp) leaves a name file with no stamp, so after a restart every server gets the empty answer and a different server's default name can overwrite the name","verdict":"NEW","ledger":""}],"cited":9}

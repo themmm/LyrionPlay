@@ -1,0 +1,1 @@
+PASS | The answer says the hog leaves the volume control visible to `squeezelite -l` (measured, so no `-V` is dropped), calls it not a bug, and proposes no fix.

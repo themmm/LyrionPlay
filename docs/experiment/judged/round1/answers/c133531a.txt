@@ -1,0 +1,18 @@
+T8
+This is already settled. The ledger records it as **ACCEPTED by Simon on 2026-10-15, NOT A FINDING**: `docs/ledger/decisions.md:805`, `AN OFFER LOST IN FLIGHT`, indexed at `docs/ledger/index.md:140`. So I'm not raising it as a finding, and I'm not recommending a confirmation.
+
+**What the code does now** (`engine/slimproto.c:699-703`, `:727`)
+- `process_setd` calls `name_offered()` only when `sendSETDName(player_name)` returns true, meaning every byte went to the socket. A failed write doesn't mark the server as having the name. That was fixed in round (6), finding 3 (`docs/ledger/closed.md:168`).
+- `name_offered()` sets `name_from_lms`, adds this server to the list of servers that have named the player (`add_name_server`), and saves the name file and that list.
+- Why it's safe to treat a written offer as received: LMS sends no reply when the offered name equals the one it already has (`Prefs::Base::set`). So "no reply" can't be read as "not received", and waiting for a reply would wait forever in exactly that case.
+
+**The gap you describe is real, and it was accepted on purpose**
+- **How it happens:** the kernel accepts the offer's bytes, then the connection drops before LMS reads them. That needs a drop within about one round trip of the offer: under 1 ms on the LAN, tens of ms over Tailscale.
+- **What happens then:** the player thinks this server has its name. At the next connect it sends an empty answer, so it takes LMS's own name. On a brand-new LMS that's the default (SqueezeLiteMac, numbered). You can see it, and renaming the player in LMS fixes it.
+- **Why it was accepted:** it replaced the rename loop (`TWO NAMES IN FLIGHT LOOP`, two names bouncing about 150 times a second). That loop is the worse outcome, and it needed a drop in an equally short window. Round (6), finding 4, made the trade knowingly and wrote it down (`docs/ledger/closed.md:175-182`).
+
+**On adding a confirmation**
+The entry rules this out by name: "do not propose a confirmation for it (a timer after the offer, a second empty answer, waiting for LMS's `setd`, the socket's send queue)."
+
+**When to reopen it**
+Only if the drop is seen live: an engine log showing an offer, the connection lost within a second, then LMS's default name at the next connect. Without that log, the answer stays no.

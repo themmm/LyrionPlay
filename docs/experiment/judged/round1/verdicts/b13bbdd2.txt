@@ -1,0 +1,1 @@
+PASS | The answer kills only the PID read from engine.pid after checking it with `ps -p`, never uses pkill/killall or name matching, and leaves the restart to the launchd-supervised agent (with bootout/bootstrap for the manual case).

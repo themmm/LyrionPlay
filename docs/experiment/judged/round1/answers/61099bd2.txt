@@ -1,0 +1,20 @@
+T6
+**It's correct as designed, not a bug.** The ledger already settles this exact question: §A2 **FOLLOW'S BUILT-IN FALLBACK**, declined by Simon on 2026-10-15 in /code-review 2026-10-15 (7), finding 2.
+
+**The code** (`app/Sources/PlayerCore/Settings.swift:224-229`):
+
+```swift
+if let holding, !isOn(holding), let held = devices.first(where: { $0.uid == holding }) { return held }
+guard let output = devices.first(where: \.isDefault) else { return nil }
+if !output.isBuiltIn, isOn(output.uid) { return devices.first(where: \.isBuiltIn) }
+return output
+```
+
+The fallback on line 227 only runs when the macOS output is a non-built-in device whose own player is on. In that case it takes the first built-in output in `squeezelite -l` order. The code still matches what the ledger entry describes.
+
+**Why it isn't a bug:**
+- The case raised in that review was headphones in the jack, with the speakers listed first, so Follow plays out loud. That doesn't happen in practice. Plugging headphones in makes them the macOS output. `output` is then the headphones, which are built-in, so line 227 isn't reached and Follow plays to them.
+- The fallback only matters when the user has picked a DAC that has its own player as the macOS output. Follow then needs some other device, and only the Mac's own outputs qualify: `PlayerList.rows` and `EnginePlan.make` give every non-built-in device its own player. Picking among the built-in outputs isn't something to design around: Simon said "headphones become primary output when they are plugged in" and asked that the choice between built-in outputs not be raised again.
+- This keeps the 2026-10-10 decision in `ONE PLAYER PER DAC`: when Follow would land on a DAC that has its own player, Follow uses the built-in output, so two engines never hold one device.
+
+**What's left:** if the user plugs in headphones and then manually makes a DAC with its own player the macOS output, Follow falls back to whichever built-in output comes first in the list, which may be the speakers. That is exactly the case that was declined, so it shouldn't be reported as a finding. The ledger says to re-raise it only with a real report from a user.

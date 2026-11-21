@@ -1,0 +1,1 @@
+PASS | The answer says the volume control stays visible to `squeezelite -l` while the DAC is held and played to (measured), so no -V is dropped and it isn't a bug to fix.

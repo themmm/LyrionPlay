@@ -1,0 +1,16 @@
+T4
+**I would report no bugs.** The project ledger already settles this: `A STALLED SERVER IS NOT A FINDING` (§A2, decided by Simon on 2026-10-11) says to skip, in reviews, any finding that needs LMS to stall or answer late. That covers checks that outlast the 2 s tick or the 5 s cadence, replies that land after a server change, the `LMSDiscovery.find` and `LMSClient.call` timeouts (2 s / 4 s), and the menu or volume keys lagging. Such a finding can be raised again only with a stall seen live, named by time from the agent.log lines that were added to show one.
+
+Here is what a 3-second answer does in today's code (`app/Sources/Agent/main.swift:505-603`, `app/Sources/PlayerCore/LMS.swift:21-233`). None of it is a reportable finding:
+
+- **No overlapping checks.** `refreshLMS` returns early while `lmsCheckRunning` is set, so the 2 s tick doesn't start a second check. The next one starts about 5 s after this one began.
+- **No false "did not answer".** 3 s is under the 4 s `URLRequest` timeout, so the check is kept as answered. The menu's per-player state is simply about 3 s old.
+- **A change of server during the check is handled.** `ServerChoice.checked` drops the result if the setting changed meanwhile, and the agent checks the new server at the next tick. This race was fixed and pinned in `CODE-REVIEW AFTER 0.2.2` finding 1 and `CODE-REVIEW 2026-10-11` finding 6.
+- **agent.log shows it.** `LMSCheckLog` writes one "LMS check of X took 3.0 s" for the first slow check in a run, then one "back under 2 s … after K slower" when the run ends. The time is taken on the check's own task with `SuspendingClock`, so Mac sleep and a busy main queue are not counted.
+- **What gets slower, and is already accepted:**
+  - Mac-to-LMS volume pushes are separate requests through `LatestValueSender`, one at a time. A slow LMS delays them by its answer time, and the latest level still wins.
+  - `syncFixedVolume` acts on status that is about 3 s old.
+  - In `volumeRestore`, the window between its two reads gets longer. That window is already accepted in §A2 `FIXED AT 100% PER DAC`.
+  - A status check doesn't block a push (`A STATUS CHECK HOLDS UP A PUSH` is logged as WRONG).
+
+Any of these would be dropped at the stalled-server gate. To raise one, I'd need an agent.log from a real stall (the "took N s" or "dropped after" lines with their times) that shows a harm beyond the delay itself. I didn't change any file.

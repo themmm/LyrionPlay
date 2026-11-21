@@ -1,0 +1,18 @@
+T2
+I have no findings to report on `ask_server_uuid` (`engine/slimproto.c:645-672`). The two problems a review would normally raise are both already declined by Simon in the ledger, and nothing else I checked has a writer.
+
+**Already declined, so I would not report them:**
+- **Ports.** The function always asks on UDP 3483 (`ask_server_uuid(slimproto_ip, PORT)` at `slimproto.c:1270`), whatever slimproto port the player connected to. That is `TWO LMS ON ONE HOST`: Simon declined it on 2026-10-15 and said the one-argument fix (pass `slimproto_port`) is not to be offered.
+- **Timeout and which reply it accepts.** It waits ~500 ms before the HELO when no answer comes, and drops a reply from another address of a multi-homed LMS (`from.sin_addr.s_addr == ip`). That is `UUID ASK RESIDUALS`: declined the same day in CODE-REVIEW 2026-10-15 (4) finding 6, and accepting a reply from any address was offered and turned down. Both cases end with the server judged by its address.
+
+**Checked and cleared:**
+1. **The request includes its trailing NUL** (`sizeof(request)` is 6). This is correct: "eUUID" is the tag and the NUL is its length byte of 0, which is how LMS's `e` discovery reads a request. `test_ask_uuid` checks the 6 bytes.
+2. **Each `poll(..., 250)` in the inner loop starts its timer again after a datagram that is skipped.** So "two tries of 250 ms" is not a hard limit: every datagram from another address restarts the wait. The only realistic sender is the multi-homed LMS case above, once per try, so the worst case is about 1 s. That falls inside the declined residual. Nothing else knows the socket's ephemeral port.
+3. **The reply's source port is not checked**, only its address. To be accepted, a datagram would have to come from the LMS host's own address and hit an ephemeral port only LMS was sent from. No such sender.
+4. **A signal during `poll`** (EINTR, e.g. SIGTERM, whose handler only sets a flag) ends that try's wait early. At most one more try of 250 ms follows, then the stop goes ahead as before.
+5. **A reply from the right address that does not parse** (an older LMS with no UUID tag, or an `'E'` answer without it) uses up one try. A server that answers does so quickly, so this costs about two round trips, not 500 ms. The result is "" and the address decides.
+6. **Reading the reply:** `parse_server_uuid` checks bounds before each TLV and its value (`i + 5 <= len`, `i + 5 + n > len`). A value is accepted only if it fits `SERVER_UUID_LEN` (63) and contains no space, control character or newline, so it cannot break a line in the name file. A reply over 512 bytes is cut short, which gives "" rather than an overrun.
+7. **No stale UUID carries over.** `server_uuid` is cleared on entry to every call, and the function runs only after a TCP connect that worked, including after a `serv` switch. `test_ask_uuid_no_answer` checks this.
+8. **The 500 ms block is not a new kind of stall on the slimproto thread.** Upstream's connect path already blocks that thread for longer (`connect_timeout` up to 5 s, `sleep(5)`), and the cost itself is the accepted one above.
+
+The ledger's rule is to log evidence-cleared items in the same session, or the next review will re-derive them. You asked me not to modify files, so none of this is logged. Points 2-5 would fit as one line under the `UUID ASK RESIDUALS` entry.

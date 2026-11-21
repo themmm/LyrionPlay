@@ -1,0 +1,21 @@
+T2
+I have **no new findings to report** on `ask_server_uuid` (`engine/slimproto.c:645`). All three things you asked about are already settled in the ledger:
+
+| What a review would raise | Where it's settled |
+|---|---|
+| **Ports:** `ask_server_uuid(slimproto_ip, PORT)` (`slimproto.c:1270`) always asks UDP 3483, even when the player connects on another slimproto port, so two LMS on one host count as one server | Simon declined it, not a finding (`TWO LMS ON ONE HOST`, decisions.md). The ledger also says not to suggest passing `slimproto_port` as the fix. |
+| **Timeout:** up to about 500 ms (two tries of 250 ms) before the HELO when the server doesn't answer UDP | Simon declined it (`UUID ASK RESIDUALS`). 503 ms was measured and accepted when it was built. |
+| **Which reply it takes:** only one whose source is the address it asked (`slimproto.c:664`), so a multi-homed LMS that answers from another address gets no UUID | Same entry (`UUID ASK RESIDUALS`). Accepting a reply from any address was offered and declined. Either way, the server is identified by its address instead. |
+
+**Other things I checked that turned out fine:**
+- **Request bytes:** `sizeof(request)` sends 6 bytes. The trailing NUL is the TLV length byte (length 0), which is intended, and `test_ask_uuid` checks it (`test_slimproto_name.c:916`).
+- **Timeout restarts:** each datagram from a wrong address starts the 250 ms `poll` wait again, so "two tries of 250 ms" isn't a strict limit. The only realistic source is the multi-homed reply, and that comes once per request, so the worst case is about 540 ms, which is the declined residual above. Going past that would take someone flooding a random temporary port.
+- **Late reply:** if the first try's reply arrives during the second try, it's accepted. It comes from the same server with the same UUID, so no harm.
+- **Wrong reply:** a reply from the right address that isn't an `E` answer, or has no UUID tag, ends the wait and the request is sent again. If that also fails, the UUID stays empty and the address decides.
+- **No source-port check:** nothing else sends to that temporary port, so this is the same case as the source-address check.
+- **`sendto` fails:** it stops without a second try, ends with an empty UUID, and the address decides. That's the same outcome as no answer.
+- **`parse_server_uuid` bounds:** it checks there's room for each tag header (`i + 5 <= len`) and its value (`i + 5 + n <= len`), limits the length to 63, and rejects non-printable bytes. The 512-byte buffer is bigger than any reply asking only for the UUID.
+- **Old UUID cleared:** `server_uuid` is cleared before the `socket()` call can fail, so the previous server's UUID is never kept. `test_ask_uuid_no_answer` checks this.
+- **Call site:** it runs only after a successful TCP connect, using the current `slimproto_ip`. That includes after a `serv` server switch, so it asks the right address.
+
+The ledger's rules say that what I cleared above should be written down in this session (a §A3 row plus an index row). You told me not to modify any files, so I haven't added them.

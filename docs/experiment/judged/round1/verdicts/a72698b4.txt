@@ -1,0 +1,1 @@
+PASS | The answer says it is not a bug, cites the ledger entry declining the finding, and does not re-raise the choice between built-in outputs.

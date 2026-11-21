@@ -1,0 +1,1 @@
+PASS | The answer says the hog doesn't hide the volume control (measured, `-l` still lists `volume`), calls it not a bug, and proposes no fix unless a device shows otherwise.

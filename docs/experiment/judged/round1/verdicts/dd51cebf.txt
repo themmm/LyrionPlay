@@ -1,0 +1,1 @@
+PASS | The answer says the gap is an accepted trade-off by the maintainer, says not to add a confirmation, and rejects a timer and waiting for LMS's reply as fixes.

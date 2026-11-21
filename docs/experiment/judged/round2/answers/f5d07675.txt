@@ -1,0 +1,53 @@
+R2
+Status: I've read all the code and checked my candidate findings against the ledger. Writing up now.
+
+I found 5 bugs, none of them severe. The ledger has nothing on any of them, though #1 has the same trigger (a full disk) that Simon has said can't be tested on the rig. I changed no files, so nothing went into the ledger. That includes the decisions I checked below.
+
+## Findings, most severe first
+
+**1. A failed log write crashes the agent and keeps it crashing — `app/Sources/Agent/main.swift:18-19`**
+`Log` writes with `handle.seekToEndOfFile()` and `handle.write(data)`. These are the old `FileHandle` calls, and they raise an Objective-C exception on a write error rather than throwing one. Apple's documentation lists "no free space left on the file system" as a cause, and Swift can't catch it with `try?`.
+- **What happens on a full disk:** an append fails with ENOSPC and the agent aborts. launchd restarts it, because a crash is not a successful exit. `run()` then logs "agent started" at line 153, before `stopOrphanedEngines()` at line 191, so it aborts again. It keeps crashing until space is freed.
+- **Side effect:** each crash leaves its engines orphaned, and an orphan dies at its next report (`AN ORPHAN DIES AT ITS NEXT REPORT`).
+- **Why it matters:** round (8) finding 1 added `scheduleIdentityRetry` for the case "a full disk freed". This bug means the agent never reaches that retry, because the first `log(...)` in `makeSlot`'s catch kills it.
+- **Fix:** use `try handle.seekToEnd()` and `try handle.write(contentsOf:)`.
+- **Ledger caveat:** round (7) finding 3 was closed by Simon as "closed until it comes up as a problem from a user", because a full disk can't be made on the rig. This is a different defect (a crash loop, not a missing status row), but it needs the same trigger, so Simon may want to file it the same way.
+
+**2. An old engine error hides "Not connected" — `main.swift:682` (set at `:400` and `:469`)**
+The menu shows `slot.problem ?? slot.setupProblem`, and `slot.problem` is only cleared by a successful start (`:408`).
+- **Scenario:** a device player's engine crashes or fails to start, so the menu says "The player engine stopped; restarting". The DAC is then unplugged. `reconcile` sets `setupProblem = "Not connected"`, but there's no plan for the player, so no start ever clears `problem`.
+- **Result:** the menu says "restarting" for as long as the DAC is unplugged, which is wrong. It should say "Not connected".
+- **Fix:** clear `slot.problem` when `plan[key] == nil`, or show `setupProblem` first when there's no plan.
+
+**3. A settings change can be missed at agent start — `main.swift:168-173`**
+`run()` reads the settings at line 168, then records the file's date at line 173. If the app saves in between, `settingsDate` already holds the new file's date. `tick()` then sees no change, and the agent runs on the old settings until the next save.
+- `tick()` gets the order right: date first (`:506-509`).
+- The window is short: it spans `ServerChoice` and possibly the save of the defaults. But a player switched on at login could end up ignored.
+- **Fix:** take the date before `readSettings()`.
+
+**4. Orphaned engines are still stopped one at a time — `main.swift:211-215`**
+`stopOrphanedEngines` sends SIGTERM and waits up to 3 s for each engine in turn, on the main queue. This is the same pattern CODE-REVIEW 2026-10-14 finding 6 fixed in `stopEngines`: signal them all, then wait once.
+- It only runs at agent start after a crash, and only costs the full 3 s per engine that hangs.
+- With N orphans, that delays the first `reconcile` by up to 3·N s.
+- It's low severity, and worth fixing the same way for consistency.
+
+**5. A failed engine launch probably leaks its pipe (plausible, not verified) — `main.swift:357-401`**
+`readabilityHandler` is set on the stdout pipe before `process.run()`. If `run()` throws, nothing removes the handler (it's only cleared on EOF at `:363`), and the write end is still open in the agent, so EOF never comes.
+- The handler's dispatch source probably keeps the pipe's file handles, and the `stderr` log handle, alive.
+- That would leak a few descriptors on each retry (backoff up to 30 s) for as long as the launch keeps failing, for example while `install.sh` replaces the bundle.
+- **Fix:** set the handler after `run()` succeeds, or clear it in the catch.
+
+## Already settled in the ledger, so not raised
+- `ServerChoice` and `LMSClient` when LMS is slow or unreachable: `A STALLED SERVER IS NOT A FINDING`.
+- `ask_server_uuid` and discovery probing port 3483: `TWO LMS ON ONE HOST`, `UUID ASK RESIDUALS`.
+- Follow's built-in fallback: `FOLLOW'S BUILT-IN FALLBACK`.
+- The identity retry starting another player's waiting engine, and one shared backoff for all players: `A RETRY STARTS A WAITING ENGINE`, `CODE-REVIEW 2026-10-16`.
+- The planned device's live rate and format in the menu: `CODE-REVIEW 2026-10-16` finding 1.
+- `stopping` being added twice in `reconcile`: `CODE-REVIEW 2026-10-15` finding 5.
+- `Paths.slug` width: `THE SLUG IS NEVER WIDENED`.
+
+I also checked these and found no defect:
+- **Volume and fixed handling:** `EnginePlan.changes` and its stop-before-start order; `expectedExit` handling across a stop and restart; `LatestValueSender`'s lock and drain; `VolumePush`; `FixedVolumeSync` and `volumeRestore`.
+- **Device following:** `OutputFollow.resolve` and the deferred / `shouldReconcile` path, which has no loop.
+- **Parsing and identity:** `VolumeReport` and `FormatLine` parsing; MAC lowercasing between `PlayerIdentity` and `LMSClient.listing`.
+- **Settings and engine arguments:** `Settings.read` and `save` with versions; `EngineArguments` and `deviceParams`.

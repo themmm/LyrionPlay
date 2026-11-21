@@ -1,0 +1,35 @@
+R1
+I found one finding worth raising in `engine/output_coreaudio.c` and two minor ones. I checked each against `docs/ledger/` and none of them is logged there yet. I changed no files, so nothing here is logged in the ledger yet either.
+
+### 1. A device with more than one output stream puts the right channel on the wrong output (medium)
+**`engine/output_coreaudio.c:1058-1066`** (`store`). The same mistake is in the tap at **`:974-977`** (`tap_push`).
+
+`store` picks its layout from the number of buffers (`mNumberBuffers`). It should look at how many channels the first buffer holds. CoreAudio gives the IOProc one buffer per stream. Whenever there are two or more buffers, the code writes left to channel 0 of buffer 0 and right to channel 0 of buffer 1. That is only right when each stream has one channel. If the first stream is a stereo pair:
+- **Example:** an Aggregate Device of two stereo DACs (Audio MIDI Setup), or an interface that shows outputs 1-2 and 3-4 as separate streams.
+- **What happens:** left plays on output 1, output 2 plays silence, and right plays on output 3 (the second device, on an aggregate).
+
+Why nothing catches it:
+- **Not filtered:** the device list includes aggregate devices (`transport_name` reports them as "aggregate"), and nothing in `app/Sources/PlayerCore` filters them out, so a user can pick one as a player.
+- **Only stream 0 is checked:** `_configure` (`:1317-1327`) and `set_physical_format` look only at the first stream. Writing floats into buffer 1 assumes a format nobody checked.
+- **No test covers it:** the fake HAL always builds a single buffer (`engine/tests/test_output_coreaudio.c:474`).
+- **The tap hides it:** `tap_push` makes the same choice, so `tools/bitcheck` would compare the wrong mapping with itself and pass.
+
+**Fix:** use the interleaved path whenever `mBuffers[0].mNumberChannels >= 2`. Use the two-buffer path only when each buffer has one channel. Change `tap_push` the same way, and add a two-stream stereo case to the fake HAL.
+
+### 2. A one-channel device loses the right channel (low)
+**`:1056`**: with a single buffer of one channel, only `src[0]` is written, so anything panned right is never heard. Upstream's PortAudio path always opens two channels. Mono outputs are rare, so this is low, but mixing to `(L+R)/2` costs one line.
+
+### 3. `get_string` may leave a long name unterminated (low, not confirmed)
+**`:147-153`**: `buf[0]` is cleared before the call, but if `CFStringGetCString` returns false (a name or UID over 255 UTF-8 bytes), I believe it can leave a partial, unterminated string in the buffer. `find_device` (`strcmp`/`strcasestr`), `list_devices` (`json_string`) and the log lines would then read past the end of a stack buffer. I tried to confirm this with a small CoreFoundation test, but the shell permissions blocked it. The fix is safe either way: set `buf[0] = '\0'` when the call returns false. Users can give aggregate devices names that long.
+
+### Checked and already settled in the ledger (not raised)
+- **A monitor waiting to retry is not waited for at close:** decided in `CODE-REVIEW AFTER 0.2.2` (`docs/ledger/closed.md:1751-1760`).
+- **Format of the silence** (`_silence_fmt`, the OFF branch): `SILENCE FORMAT IS NOT A FINDING`.
+- **Mute on a device with no mute control:** `MUTE HAS A WRITER ONLY WITHOUT A MUTE CONTROL`.
+- **`_ca_open` called from two threads, and `apply_latest` with a stale device ID:** `INLINE REVIEW AFTER 0.2.2`.
+- **The 500 ms settle window and `VOLUME_MOVED_DB`:** `READ-BACK IS NOT THE LEVEL SET`.
+- **`ioproc` stopping at a rate boundary, and the reopen flag:** `THE BOUNDARY AND THE REOPEN FLAG`.
+- **The format report lagging the DAC:** `THE FORMAT CHANGES WHEN OUTPUT HITS THE DAC`.
+- **Losing the device while it plays:** not handled in this file, but the agent stops the engine when the device is unplugged (logged live in `closed.md:941-942`).
+
+To keep the next round from raising these again, findings 1-3 still need their rows in the ledger and its index.

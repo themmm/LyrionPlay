@@ -1,0 +1,1 @@
+PASS | The answer says the built-in fallback is not a bug, cites Simon's ruling that declined it ("headphones become primary output when plugged in"), and does not recommend any change.

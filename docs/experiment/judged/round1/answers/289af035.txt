@@ -1,0 +1,22 @@
+T1
+**Recommendation: no, keep `SqueezeLiteMac`.** The difference from the app name is deliberate. It isn't a branding mistake.
+
+**Why it's named that way**
+- Material Skin picks a player's icon by `model` first, then by `modelname`. In Material's `player-icons.json`, `squeezelite` → `SqueezeLiteMac` maps to `{"svg":"apple"}`, so the player gets the Apple icon.
+- With `LyrionPlay` as the model name, Material has no entry and shows its generic speaker icon. That's what happened before 0.2.2.
+- The other checks Material runs before modelname can't match this player. The firmware doesn't end in `-pCP`, and the MAC prefix never matches the Raspberry Pi prefixes.
+
+**Where it's settled**
+- The decision is in the CLAUDE.md ledger under `MODEL NAME IS SqueezeLiteMac`. Simon made it on 2026-10-10 and checked it in Material the same day ("Logo works").
+- He also said it should not be raised again: "mode name is meant to be different to the app name this isnt a bug or an issue its as planned for the logo to work."
+- The code says so too: the comment at `app/Sources/PlayerCore/EngineArguments.swift:7-10` points to that ledger entry.
+- The test `modelNameGivesMaterialsAppleIcon` (`app/Tests/PlayerCoreTests/PlayerCoreTests.swift:115`) fails if the value changes.
+
+**What changing it would cost**
+- Every LyrionPlay player in Material loses its Apple icon.
+- The test fails.
+- Getting the icon back would need a new entry upstream in Material's icon list. The ledger rules that out as a fix, because the name exists to match the entry Material already has.
+
+**The accepted downside:** LMS lists the player's model name as "SqueezeLiteMac" rather than "LyrionPlay". Simon accepted that for the icon.
+
+To change it, Simon would have to reverse his own decision. It shouldn't be treated as a cleanup. I haven't changed any files.

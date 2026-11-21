@@ -1,0 +1,21 @@
+T7
+No, it isn't a bug. This question is already settled in the project's ledger, and a measurement disproved it.
+
+**The ledger entries:**
+- `docs/ledger/disproven.md:51`, **A HOG DOES NOT HIDE THE VOLUME CONTROL**, marked **WRONG** (measured 2026-10-12 on the DragonFly Black v1.5).
+- `docs/ledger/closed.md:1149`, **CODE-REVIEW 2026-10-12 (3)**, findings 1 and 2. They were raised as exactly this scenario: a reconcile probe while the engine holds the DAC turns a saved "Device's own volume" into Software through `options(for:)`, dropping `-V`. Simon asked for both to be tested on real hardware ("verify 1 & 2 hold up under real world tests"), and both were **DISPROVEN**. Nothing was changed.
+
+**What was measured:**
+- A scratch process took the DragonFly exclusively (`kAudioDevicePropertyHogMode` set to its own PID).
+- While it held the device, the installed `squeezelite -l`, run as a separate process, reported `"exclusive_owner":<probe PID>` and still listed `"volume":{"control":"main","db_min":-64.00,"db_max":0.00,"mute":true}`.
+- A second run did the same with the IOProc running and playing zeros (`DeviceIsRunningSomewhere` = 1). `-l` still showed the volume control.
+
+So holding a device and playing to it leaves its volume control visible and settable to every process. The probe has nothing to miss, so the misread that would drop `-V` never happens. Finding 2, `PlayerModel.save` writing the corrected choice for every listed device, depends on that misread and was dropped with it.
+
+**The code still works the way the test assumed.** `-l` decides whether there is a volume control with `settable()` on `kAudioDevicePropertyVolumeScalar` (`engine/output_coreaudio.c:125` and `:272`). The agent turns a missing control into Software through `VolumeMode.nearestOffered(on:)` (`app/Sources/PlayerCore/Settings.swift:51`, `:200`). That is the same path the measurement exercised.
+
+**What the measurement didn't cover:**
+- a play started from LMS under the engine itself (the held device was driven by a scratch probe);
+- any DAC other than the DragonFly.
+
+The ledger's rule for raising it again is to name a specific device whose `-l` output loses `volume` while the device is held. Without that evidence, this isn't a finding. I didn't change any files.

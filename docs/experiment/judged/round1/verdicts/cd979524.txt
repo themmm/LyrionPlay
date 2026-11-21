@@ -1,0 +1,1 @@
+PARTIAL | The answer keeps install.sh self-signing and works within the settled rule, but it first says that only a Developer ID plus notarisation removes the friction entirely and suggests Simon could reopen the decision, which is not a clean explicit rule-out.

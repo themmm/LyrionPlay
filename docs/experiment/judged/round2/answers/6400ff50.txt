@@ -1,0 +1,43 @@
+R3
+I found no high- or medium-severity defect in the name code. The design holds up, and the ledger's settled items still match the code. Below are the four findings I would raise, all low. I made no changes and did not build or run anything.
+
+**1. A failed name write on a server's first naming can rename the player back in LMS at the next start (low; needs a write that fails, e.g. a full disk)** — `engine/slimproto.c:734-735`, `:748`, and the comment at `:581-582`
+- When LMS sends a name, line 735 adds the server to the in-memory stamp. Line 748 writes the stamp to disk only if `store_name()` succeeded.
+- If that server was not in the stamp yet and the name write fails, the disk keeps the old name and a stamp without that server.
+- At the next engine start, `name_from_lms` is true (old name in the file) and `named_by_this_server()` is false. The engine offers the old name to that server.
+- LMS accepts an offer that differs from its pref, so its newer name is overwritten by the old one.
+- The comment at 581 says the worst case is "offers a server the name … (and that offer stamps it)". It treats the offer as harmless, but the offered name is the stale one.
+- Since round (5) both files are replaced atomically, so writing the stamp anyway would no longer leave it empty. Stamped, the server would get the empty answer and resend its own name.
+- Only reachable when a write fails, so it is a correction to the comment's reasoning rather than something likely in use.
+
+**2. An empty name from LMS becomes an empty name file (low; unverified whether LMS 9.1 ever sends one)** — `:732-748`
+- A `setd` with id 0 and an empty value (`len == 6`) sets `name_from_lms = true` and an empty `player_name`, then `store_name()` writes an empty `-N` file.
+- At the next start that empty file reads as a new player (`:1157-1162`) and offers `-n` over LMS's name. That is exactly what the comment at `:535` says the atomic write exists to prevent.
+- In the same run, a server not in the stamp gets no answer at all to its name query: `strlen(player_name)` is 0 at `:725`, so nothing is sent.
+- Worth one check in the LMS source: does the `playername` pref refuse an empty value? If it does, there is no writer and this can be closed.
+
+**3. `ask_server_uuid`'s wait has no overall limit** — `:656-668`
+- The UDP socket is not connected, so any datagram reaches it. Each datagram from an address other than `ip` (or a `recvfrom` error) goes round `while (poll(..., 250) == 1)` again and restarts the 250 ms.
+- A steady stream of stray datagrams to that ephemeral port would hold the slimproto thread before the HELO for as long as it lasts.
+- This is not the declined 500 ms cost or the source-address rule (`UUID ASK RESIDUALS`). It is the missing upper bound on the loop.
+- Very unlikely in practice. A deadline across both tries would close it, and so would `connect()` on the UDP socket, which also filters by address in the kernel.
+
+**4. `setd` data is read as an unbounded C string (upstream, not new)** — `:737`, `:742`, `:744`
+- `strncpy(player_name, ...)` is bounded, but `LOG_INFO("%s", setd->data)` and `sendSETDName(setd->data)` call `strlen` on the packet data. `slimproto_run` reuses a static 4096-byte buffer and does not NUL-terminate after `len`.
+- A frame without its NUL would log and echo bytes left over from earlier packets, or read past the buffer.
+- LMS always terminates the value, so this only matters against a broken or hostile server. Listed for completeness.
+
+**Checked and cleared, not raised:**
+- **`add_name_server`:** the `memmove` indices are right in all three cases (found, new, full). A connect with no UUID keeps the line's UUID. Matching by address in `add_name_server` but by UUID in `named_by_this_server` is consistent.
+- **Sizes:** the line buffer in `load_name_servers` (82 bytes) holds the longest line the engine writes (80 plus NUL). The stamp text (at most ~649 bytes) fits `file_holds`'s 1024-byte buffer, and a longer file can never compare equal.
+- **UUID request:** `"eUUID"` sent with its trailing NUL is correct: the NUL is the TLV's zero length byte.
+- **`fit_name`:** steps back at most 3 continuation bytes and cuts a partial 2-, 3- or 4-byte character at the 63-byte limit.
+- **Temp files:** the name file and the stamp use different `.tmp` names, written with `F_FULLFSYNC` then renamed.
+- **Send result:** `sendSETDName` returns false if either the header or the name was not fully written.
+
+**Left out on purpose, as ledger-settled:**
+- the ~500 ms UUID wait and the reply-address rule (`UUID ASK RESIDUALS`);
+- port 3483 for a second LMS on one host (`TWO LMS ON ONE HOST`);
+- an offer stamped though it was lost in flight (`AN OFFER LOST IN FLIGHT`);
+- a server judged by its address when it gives no UUID, and the empty answer when there is no stamp (round (5) gates, §A2 `LMS OWNS THE PLAYER NAME`);
+- the confirmation sending LMS's full text while the file keeps 63 bytes (round (6)).

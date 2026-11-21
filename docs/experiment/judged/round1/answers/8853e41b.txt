@@ -1,0 +1,13 @@
+T7
+**No. It isn't a bug, and the ledger already settles it.** The belief is logged as **WRONG** in §A3 under `A HOG DOES NOT HIDE THE VOLUME CONTROL` (`docs/ledger/disproven.md:51`, index row `docs/ledger/index.md:93`). It was first raised as findings 1 and 2 of `CODE-REVIEW 2026-10-12 (3)`, and both were disproven by measurement (`docs/ledger/closed.md:1149`).
+
+**The concern:** the agent runs a reconcile probe while the engine holds the DAC. If that probe saw no volume control, `nearestOffered(on:)` (`app/Sources/PlayerCore/Settings.swift:51`) would read a saved "Device's own volume" as Software. `EngineArguments` would then leave out `-V` (`app/Sources/PlayerCore/EngineArguments.swift:44`).
+
+**Why it doesn't happen (measured 2026-10-12 on the DragonFly Black):**
+- A scratch process set `kAudioDevicePropertyHogMode` on the DragonFly to its own PID. While it held the device, `squeezelite -l` from a separate process showed `"exclusive_owner":<that PID>` and still reported `"volume":{"control":"main","db_min":-64.00,"db_max":0.00,"mute":true}`.
+- The test was repeated with an IOProc running (`DeviceIsRunningSomewhere` = 1, 404 IOProc callbacks in 4 s), so the device was being held and played to. `-l` still reported the volume control.
+- Holding a device and playing to it doesn't stop other processes seeing or setting its volume. The reconcile path therefore never sees a missing volume control, and `-V` is never dropped.
+
+The code hasn't changed in a way that would affect this. The probe still detects the volume control with `settable()` on `kAudioDevicePropertyVolumeScalar` (`engine/output_coreaudio.c:121`, `:272`), the same check that was measured. The later decision `SOFTWARE ONLY WITHOUT A VOLUME CONTROL` (0.4.3) doesn't change that.
+
+**What wasn't tested** (the ledger says so too): a hold by the LyrionPlay engine itself during an LMS play, and any DAC other than the DragonFly. The ledger's condition for raising this again is a specific device whose `squeezelite -l` output loses `volume` while it is held. Without that evidence, this shouldn't be reported as a finding.
